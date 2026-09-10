@@ -1,6 +1,7 @@
 import React, { useEffect, useId, useRef, useState, type CSSProperties } from 'react';
 import { Dashboard, names, states, type DashboardProps } from './dashboard.js';
 import type { Overview, QuotaSnapshot, QuotaMeter } from '../core/types.js';
+import { dataAge } from './refresh.js';
 import { health } from '../core/normalize.js';
 function resetLabel(resetAt:string|undefined,now:number){
   if(!resetAt || !Number.isFinite(Date.parse(resetAt)))return '重置时间未提供';
@@ -9,13 +10,28 @@ function resetLabel(resetAt:string|undefined,now:number){
   return `重置 ${date.toLocaleString('zh-CN',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false})} · ${relative}`;
 }
 function PreviewMeter({meter:m,now,stale}:{meter:QuotaMeter;now:number;stale:boolean}){
-  const percent=m.remainingPercent,value=percent!==undefined?`${percent.toLocaleString(undefined,{maximumFractionDigits:1})}%`:m.remaining!==undefined?`${m.remaining.toLocaleString(undefined,{maximumFractionDigits:2})}${m.currency?` ${m.currency}`:''}`:'未知';
+  const percent=m.remainingPercent,value=m.entitlement==='unlimited'?'无限':m.entitlement==='unsupported'?'套餐未包含':percent!==undefined?`${percent.toLocaleString(undefined,{maximumFractionDigits:1})}%`:m.remaining!==undefined?`${m.remaining.toLocaleString(undefined,{maximumFractionDigits:2})}${m.currency?` ${m.currency}`:''}`:'未知';
   const color=stale?'#929b9a':percent!==undefined && percent<10?'#d34e48':percent!==undefined && percent<20?'#c77a23':'#16856c';
-  return <div className="aim-preview-meter"><div className="aim-preview-value"><span>{m.name}</span><strong>{value}</strong></div>{percent!==undefined && <div className="aim-preview-track" role="progressbar" aria-label={`${m.name} 剩余额度`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.max(0,Math.min(100,percent))} aria-valuetext={`${value} 剩余${stale?'，旧数据':''}`}><div style={{width:`${Math.max(0,Math.min(100,percent))}%`,background:color}}/></div>}{m.kind!=='balance' && <div className="aim-preview-reset">{m.resetAt?<time dateTime={m.resetAt} title={m.resetAt}>{resetLabel(m.resetAt,now)}</time>:resetLabel(undefined,now)}</div>}</div>;
+  const full=m.name,compact=full.replace(/^codex · /i,'').replace(/^general · /i,'').replace(/Weekly/g,'周').replace(/ · /g,' ');
+  const date=m.resetAt?new Date(m.resetAt):undefined;
+  const sameDay=date?.toDateString()===new Date(now).toDateString();
+  const dateText=date?(sameDay?date.toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit',hour12:false}):date.toLocaleDateString('zh-CN',{month:'2-digit',day:'2-digit'})):undefined;
+  return <div className="aim-preview-meter">
+    <span className="aim-preview-name" title={full}>{compact}</span>
+    {percent!==undefined?<div className="aim-preview-track" role="progressbar" aria-label={`${full} 剩余额度`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.max(0,Math.min(100,percent))} aria-valuetext={`${value} 剩余${stale?'，旧数据':''}`}><div style={{width:`${Math.max(0,Math.min(100,percent))}%`,background:color}}/></div>:<span/>}
+    <strong className="aim-preview-number">{value}</strong>
+    {!m.entitlement && m.kind!=='balance' && m.kind!=='credits' && <span className="aim-preview-reset">{date?<span className="aim-reset-trigger" tabIndex={0} aria-label={resetLabel(m.resetAt,now)}><time dateTime={m.resetAt}>{dateText} 重置</time><span role="tooltip" className="aim-reset-tooltip">{resetLabel(m.resetAt,now)}</span></span>:'重置待提供'}</span>}
+  </div>;
 }
 function PreviewCard({snapshot:s,now,threshold}:{snapshot:QuotaSnapshot;now:number;threshold:number}){
   const state=health(s,threshold,now),stale=s.status==='stale' || Date.parse(s.expiresAt)<=now;
-  return <article className="aim-preview-row"><header><div><strong>{names[s.provider]}</strong><small>{s.account.name}</small></div><span className={`aim-preview-state aim-preview-state-${state}`}>{states[state]}</span></header>{s.meters.map(m=><PreviewMeter key={m.id} meter={m} now={now} stale={stale}/>)}{s.missingMeters?.length? <p className="aim-preview-reset">待返回：{s.missingMeters.join('、')}</p>:null}</article>;
+  const platform=names[s.provider],account=s.account.name;
+  const title=account.toLowerCase().includes(platform.toLowerCase())?account:`${platform} · ${account}`;
+  return <article className="aim-preview-row"><header><strong title={title}>{title}</strong><span className={`aim-preview-state aim-preview-state-${state}`} aria-label={s.pending && !s.meters.length?'查询中':states[state]} title={states[state]}>{s.pending && !s.meters.length?'查询中':state==='healthy'?'●':states[state]}</span></header>
+    {s.meters.map(m=><PreviewMeter key={m.id} meter={m} now={now} stale={stale}/>)}
+    {s.missingMeters?.length?<p className="aim-preview-reset">待返回：{s.missingMeters.join('、')}</p>:null}
+    <div className="aim-preview-age" title={new Date(s.fetchedAt).toLocaleString()}>{s.meters.length?`采集于 ${dataAge(s.fetchedAt,now)}`:'尚无成功数据'}{s.pending?' · 正在更新…':s.status==='stale'?' · 更新失败，显示旧数据':''}</div>
+  </article>;
 }
 export function QuotaChip(props:DashboardProps) {
   const [position,setPosition]=useState<CSSProperties>({});
@@ -32,11 +48,17 @@ export function QuotaChip(props:DashboardProps) {
   useEffect(()=>{
     if(!preview || open)return;
     window.addEventListener('resize',locate);window.addEventListener('scroll',locate,true);
-    let live=true;setNow(Date.now());setBusy(true);
-    void (props.previewQuery ?? props.query)().then(d=>{if(live){setData(d);setError(false);}}).catch(()=>{if(live)setError(true);}).finally(()=>{if(live)setBusy(false);});
-    // Only the on-screen age label ticks; no network polling in the preview.
+    let live=true,poll:ReturnType<typeof setTimeout>|undefined;setNow(Date.now());
+    const cached=props.peek?.(true);if(cached)setData(cached);
+    const check=(readOnly=false)=>{
+      if(!live || document.hidden)return;
+      setBusy(true);
+      void (props.previewQuery ?? props.query)(readOnly).then(d=>{if(live){setData(d);setError(false);if(d.snapshots.some(s=>s.pending))poll=setTimeout(()=>check(true),1000);}}).catch(()=>{if(live)setError(true);}).finally(()=>{if(live)setBusy(false);});
+    };
+    check();
+    // After active jobs finish, hovering does not poll again at cache expiry.
     const timer=setInterval(()=>setNow(Date.now()),30000);
-    return()=>{live=false;clearInterval(timer);window.removeEventListener('resize',locate);window.removeEventListener('scroll',locate,true);};
+    return()=>{live=false;clearTimeout(poll);clearInterval(timer);window.removeEventListener('resize',locate);window.removeEventListener('scroll',locate,true);};
   },[preview,open,props.query,props.previewQuery]);
   useEffect(()=>{
     if(!open && !preview)return;
@@ -67,7 +89,7 @@ export function QuotaChip(props:DashboardProps) {
       {error && <p role="status">查询失败{data?' · 保留上次结果':''}</p>}
       {data?.snapshots.filter(s=>s.status!=='not-configured').map(s=><PreviewCard key={`${s.provider}:${s.account.id}`} snapshot={s} now={now} threshold={data.lowQuotaPercent}/>)}
       {!busy && data && !data.snapshots.some(s=>s.status!=='not-configured') && <p>尚未选择预览渠道或指标，请到配置渠道勾选</p>}
-      <p className="aim-preview-age">按需查询 · {checked?`最近检查 ${new Date(checked).toLocaleTimeString()}`:'尚未取得数据'} · 各账号时间见详情</p>
+      <p className="aim-preview-age">按需查询 · 时间为各渠道最近成功采集时间</p>
       <div className="aim-preview-actions"><button type="button" onClick={()=>launch('usage')}>查看详情</button>{props.channels && <button type="button" onClick={()=>launch('channels')}>配置渠道</button>}</div>
     </div>}
     {open && <dialog ref={dialog} className="aim-popover" aria-label="额度与渠道" onCancel={e=>{e.preventDefault();close();}} onClick={e=>{if(e.target!==e.currentTarget)return;const r=e.currentTarget.getBoundingClientRect();if(e.clientX<r.left || e.clientX>r.right || e.clientY<r.top || e.clientY>r.bottom)close();}}><div className="aim-modal-toolbar"><span>AI 用量与渠道</span><button className="aim-close" onClick={close}>关闭</button></div><Dashboard {...props} initialTab={tab}/></dialog>}

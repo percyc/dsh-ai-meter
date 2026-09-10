@@ -5,6 +5,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools';
 import { MeterRegistry } from './core/registry.js';
 import { providerIdSchema, type ProviderId } from './core/types.js';
 import { createProviders } from './providers/index.js';
+import { effectiveQuery } from './core/channel.js';
 import { Config, configSchema, type MeterConfig } from './server/config.js';
 import { filterSchema } from './server/manifest.js';
 import { previewIncluded, projectPreview } from './core/presentation.js';
@@ -22,7 +23,8 @@ export class AiMeterService extends TypertRemoteService {
   constructor(ctx: Context, input: unknown = {}) {
     super(ctx, 'aiMeter');
     const config = configSchema.parse(input);
-    this.registry = new MeterRegistry(config);
+    const makeRegistry=(c:MeterConfig)=>new MeterRegistry(c,Date.now,(provider,account)=>{const row=c.accounts[provider]?.find(a=>a.id===account);return row?.refreshIntervalSeconds ? row.refreshIntervalSeconds*1000 : effectiveQuery(provider,row ?? {}).kind==='cli'?300000:c.cacheTtlMs;});
+    this.registry = makeRegistry(config);
     const resolve = async (name: string) => {
       const credentials = ctx.get('credentials');
       if (credentials) {
@@ -43,7 +45,7 @@ export class AiMeterService extends TypertRemoteService {
       if (!force && signature(next) === activeConfig) return;
       activeConfig = signature(next);
       this.registry.dispose();
-      this.registry = new MeterRegistry(next);
+      this.registry = makeRegistry(next);
       for (const provider of createProviders(next.accounts, resolve)) this.registry.register(provider);
     });
     ctx.effect(() => () => this.registry.dispose());
@@ -62,6 +64,11 @@ export class AiMeterService extends TypertRemoteService {
   async getPreview() {
     const accounts=this.channels.current().accounts;
     return projectPreview(await this.registry.getAllUsage(undefined,false,(provider,account)=>previewIncluded(accounts,provider,account)),accounts);
+  }
+  async getUsageView(preview:boolean,force:boolean,collect:boolean) {
+    const accounts=this.channels.current().accounts;
+    const value=await this.registry.getUsageView(force,preview?(provider,account)=>previewIncluded(accounts,provider,account):undefined,collect);
+    return preview?projectPreview(value,accounts):value;
   }
   getConfiguration() { return this.channels.get(); }
   saveConfiguration(input: ChannelSave) { return this.channels.save(input); }

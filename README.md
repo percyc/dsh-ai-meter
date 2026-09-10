@@ -13,7 +13,7 @@ Unified AI provider usage, quota and balance monitor for DeepSeek Harness.
 | Provider | 已实现 | 凭据 / 前置条件 |
 | --- | --- | --- |
 | OpenCode Go | rolling / weekly / monthly 剩余比例、reset | `OPENCODE_GO_API_KEY`，或本机 OpenCode `opencode-go` 登录条目 |
-| MiniMax | Token Plan 的 5h / weekly、boost；旧 Coding Plan 请求额度 | `MINIMAX_API_KEY`，支持国际 / 国内区域，需对应订阅 Key |
+| MiniMax | Token Plan 的 5h / weekly、boost；旧 Coding Plan 请求额度 | 官方 `mmx quota show`（本机 / SSH）或 `MINIMAX_API_KEY` HTTP；支持无限额度与套餐未包含状态 |
 | Codex | app-server 返回的各 limit bucket、周期、credits | `codex` 在服务端 PATH 中，且已通过 ChatGPT 登录 |
 | Antigravity | Gemini / Claude-GPT 的 5h、weekly、reset | 官方 `agy --print /usage`，使用 CLI 自有登录 |
 | Kimi | Coding 短周期与 weekly | 本机 Kimi Code 登录态，或 `KIMI_CODE_ACCESS_TOKEN` |
@@ -24,7 +24,7 @@ Unified AI provider usage, quota and balance monitor for DeepSeek Harness.
 - Agent 工具 **`query_ai_quota`**：结构化返回各账号的独立 meter 和采集状态。
 - 对话输入框旁常驻 **AI 用量** 按钮，悬停/键盘聚焦展示总体预览，点击打开分为“用量详情 / 配置渠道”的大面板；触屏可直接点击。
 - 多账号：每个平台可配置多组凭据名称或本地 CLI 位置，按 Provider + account 隔离缓存。
-- 默认缓存 2 分钟；并发刷新合并；单账号超时不拖垮其他账号。失败后保留旧值并标记 `stale`。
+- HTTP 默认缓存 2 分钟，CLI/SSH 默认 5 分钟，渠道可覆盖；并发刷新合并、最多 3 个采集任务同时执行；界面逐渠道显示结果。失败后保留旧值并标记 `stale`。
 - `getAvailableProviders()` 返回通过保守额度检查的账号；不自动选择模型。
 
 ## 本地开发与安装
@@ -59,7 +59,7 @@ dsh plugin --profile web add /absolute/path/dsh-ai-meter
 
 默认七个平台全部展示。API 凭据先从 DSH credentials 服务解析，再回退到 DSH **服务进程**的环境变量。读取接口不返回已存 Key，浏览器也不直接请求 Provider。配置表单中的新 Key 仅通过已认证的 DSH RPC 写入服务端，不回显、不写入浏览器持久存储。
 
-在 **AI Usage → 配置渠道** 中添加/移除账号、修改名称，MiniMax 可选择区域和套餐接口。在“连接配置”填写凭据后点击“保存并验证连接”，页面会按顺序保存渠道、保存新凭据并查询。页面显示当前凭据来源；新录入的密钥保存在 DSH 凭据服务的 `DSH_AI_METER_<hash>` 独立引用，不覆盖共享 Key 或 CLI 登录文件。账号配置存入 DSH settings 的 `dsh-ai-meter` 命名空间，保存后生效。移除账号不删除凭据。Codex/AGY 登录需在执行机器完成；页面可配置本地/SSH 位置、CLI 路径与 home，旧版 args 仍由服务端配置。暂不支持任意中转 Base URL。
+在 **AI Usage → 配置渠道** 中添加/移除账号、修改名称，MiniMax 可选择区域和套餐接口。在“连接配置”填写凭据后点击“保存并验证连接”，页面会按顺序保存渠道、保存新凭据并查询。页面显示当前凭据来源；新录入的密钥保存在 DSH 凭据服务的 `DSH_AI_METER_<hash>` 独立引用，不覆盖共享 Key 或 CLI 登录文件。账号配置存入 DSH settings 的 `dsh-ai-meter` 命名空间，保存后生效。移除账号不删除凭据。Codex/AGY/mmx 登录需在执行机器完成；页面可配置本地/SSH 位置、CLI 路径与 home，旧版 args 仍由服务端配置。暂不支持任意中转 Base URL。
 
 无需把 Key 写进仓库或配置 YAML。设置上表环境变量，或在 DSH 凭据管理中存入同名凭据后，刷新页面即可。SSH / 容器 / 多机器场景读取的是运行 DSH 的机器，第一版不会远程扫描其他电脑。
 
@@ -106,7 +106,7 @@ accounts:
 - `home`：Codex 表示独立的 `CODEX_HOME`；OpenCode / Kimi 表示用于本机文件查找的用户目录；AGY 表示传给 CLI 的 HOME / USERPROFILE，但不能替代 OS keyring 用户切换。
 - CLI 不在 PATH 时设置 `command` 为绝对路径。AGY 必须指向官方 `agy`，插件使用固定参数 `--print /usage`，不接受额外 args。不经过 shell。
 - AGY 使用外部 CLI 自身的登录和 OAuth 刷新机制。OS keyring 多账号切换、跨机器采集尚未实现。
-- 收起时无采集轮询；悬停按需查缓存，详情页可见时每 2 分钟检查，配置页和后台标签页暂停。详见下节刷新策略。
+- 收起时无采集轮询；悬停按需查缓存，详情页可见时按渠道到期时间检查，配置页和后台标签页暂停。详见下节刷新策略。
 
 ![悬停总体预览，使用合成演示数据](docs/images/preview-demo.png)
 
@@ -159,7 +159,8 @@ curl --request GET --silent --show-error --fail-with-body --max-time 15 \
 | --- | --- | --- |
 | Codex | 本地 CLI、SSH CLI | 执行机器上 Codex 自有登录 |
 | Antigravity | 本地 CLI、SSH CLI | 官方 agy 自有登录 |
-| OpenCode Go、MiniMax、Kimi、DeepSeek、302.AI | HTTP 接口，复用已有凭据或独立 Key / Access Token | DSH 服务端凭据服务；OpenCode / Kimi 可复用本地登录文件 |
+| MiniMax | 官方 `mmx quota show`（本机 / SSH）或 HTTP | CLI 自有登录、区域与套餐配置；HTTP 使用 DSH 凭据 |
+| OpenCode Go、Kimi、DeepSeek、302.AI | HTTP 接口，复用已有凭据或独立 Key / Access Token | DSH 服务端凭据服务；OpenCode / Kimi 可复用本地登录文件 |
 
 **Cookie 查询尚未验证，不提供可配置选项。** OpenCode Go 当前只有 HTTP 查询（使用 Key 或兼容已有本机登录凭据），没有 CLI 订阅额度查询方式；`opencode stats` 的使用统计不代表 Go 订阅剩余额度。 不把 Bearer 接口直接改成 Cookie 鉴权，不承诺每个平台都支持全部模板。HTTP 查询目前在 DSH 本机执行；SSH 目前只运行已支持的两个 CLI 协议，不通过 SSH 转发任意 HTTP 请求，也不提供自由 shell 脚本配置。
 
@@ -217,23 +218,24 @@ accounts:
         labels: {rolling: 5 小时, monthly: 本月}
 ```
 
-省略 `presentation` 时保留既有预览行为。省略 `meterIds` 表示全部，`meterIds: []` 表示不展示任何指标，也不会由悬停触发该渠道查询。改变展示选项和账号归属标记不会清空服务端采集缓存；改变查询来源、名称或启用状态会重新建立采集配置。
+省略 `presentation` 时保留既有预览行为。省略 `meterIds` 表示默认指标（排除额外 credits 和套餐未包含指标）；显式勾选仍可展示这些指标，`meterIds: []` 表示不展示任何指标，也不会由悬停触发该渠道查询。改变展示选项和账号归属标记不会清空服务端采集缓存；改变查询来源、名称或启用状态会重新建立采集配置。
 
 指标 ID 优先基于上游语义身份：OpenCode 窗口名、Codex limit ID + primary/secondary、MiniMax model_name + 周期、DeepSeek 币种、Kimi 窗口单位/时长、AGY 模型/额度类型或池 scope。上游缺失身份时仍有兜底 ID；上游修改身份后旧选择会显示缺失，需要人工重新选择，不能保证任意协议变化下 ID 不变。
 
 ## 刷新策略与资源开销
 
-- **收起状态**：输入框旁仅显示“用量”按钮，不启动采集，也没有轮询定时器。
-- **悬停或键盘聚焦**：显示总体预览，仅对启用且加入预览、未选择空指标列表的渠道发起一次普通查询。浏览器短缓存为 15 秒；服务端默认按账号缓存 120 秒，未过期时不访问上游、不启动 CLI。移入预览本身不会再次采集；预览停留期间只更新本地时间显示。
-- **点击**：打开大面板。“用量详情”与“配置渠道”分开显示；触屏直接点击使用同一面板。
-- **详情页**：打开时查询一次，保持可见时每 2 分钟普通查询一次；隐藏标签页和切换到配置页后暂停自动查询。恢复可见时检查一次。关闭详情后无后台采集。
-- **手动刷新**：详情页的刷新按钮绕过缓存；同时发生的同账号查询合并。多个浏览器标签页共享同一个 DSH 服务实例的账号缓存，但各自的界面轮询时间不同。
-- **配置页**：按需读取非敏感配置和凭据来源，不轮询 quota。保存后下次用量查询读取新配置。
-- **失败**：一次采集失败后不会在 HTTP 层立即重试；服务端仍缓存此次结果，之前成功的数据保留为 `stale`。客户端 RPC 失败也有 15 秒短暂退避。可手动重试。
+- **收起状态**：没有后台采集定时器。仅启动 DSH 或打开普通聊天页面不查额度。Agent 调用额度工具、用户点击校验仍可主动触发查询。
+- **悬停或键盘聚焦**：只查询启用且加入预览、未选择空指标列表的渠道。先返回缓存，过期或缺失时启动查询；有进行中的任务时，界面每秒读取其状态，逐个展示完成结果。这是读取同一批任务，服务端会合并相同账号的查询，不是每秒执行一次 CLI。任务完成后停止检查；一直停留到缓存过期也不会自动再采集，重新移入才检查。
+- **详情页**：打开时检查一次；保持可见时根据各渠道 `nextCheckAt` 安排下一次检查，只有到期渠道实际采集。标签页隐藏、切到配置页、关闭详情后停止定时检查。返回前台检查一次。已发起（包括排队）的查询会完成，不会因此启动新的定时采集。
+- **周期**：HTTP 默认 120 秒；CLI/SSH 默认 300 秒。编辑渠道 → 连接配置 → 刷新周期，可选自动或 30 秒至 1 小时；配置字段 `refreshIntervalSeconds` 可在该范围内指定整数。全局 `cacheTtlMs` 控制 HTTP 默认值，CLI 默认独立为 5 分钟。若有效重置时间更早，正在查看详情时会提前检查；不会自行将额度补满。
+- **缓存位置**：浏览器插件实例内存保存最近结果和 15 秒防重复缓存，有任务进行或到达检查时间时不受该短缓存阻挡；服务端进程内存按 Provider + account 保存数据和在途任务。同一 DSH 实例的不同浏览器共享服务端缓存；不同 DSH 实例不共享。两层均不写磁盘，页面刷新 / 服务重启分别清除对应缓存。
+- **手动刷新与校验**：详情刷新绕过缓存，对全部启用渠道采集；渠道校验只采集一个账号，并清理浏览器用量缓存，返回预览/详情即可取得新结果。相同账号的并发请求仍合并。
+- **并发与超时**：最多 3 个采集任务同时执行（HTTP、CLI、SSH 共用队列），其余排队；每账号超时从实际取得执行名额后开始。UI 不等待整批完成，不会被慢 SSH 阻塞显示。Agent 的完整查询 RPC 仍等待整批结果。
+- **失败退避**：不在 HTTP 层立即重试。首次失败等待一个渠道周期，连续失败翻倍，最多 30 分钟；退避期间只复用错误/旧数据。成功后恢复正常周期，手动校验/刷新可跳过退避。RPC 连接失败时详情 30 秒后再试，预览不持续重试。
+- **时间含义**：`fetchedAt` 是最近成功采集时间，`checkedAt` 是最近尝试时间；无成功数据时明确显示“尚无成功数据”。`expiresAt` 控制数据新鲜度；`nextCheckAt` 控制下次采集/失败重试时间；`pending` 表示已发起、尚未完成的任务。失败仍显示旧值并标注“更新失败，显示旧数据”。
 
-原来的 60 秒强制全量刷新，在七个平台各一个账号、五个 HTTP 平台均配置有效凭据且两个 CLI 均已安装的情况下，每小时约产生 **300 次直接 HTTP 请求 + 120 次 CLI 进程启动**，另加 CLI 内部网络请求。未配置 HTTP Key 不发网络请求，找不到 CLI 时不启动进程。账号增多时按账号增加；这些是调用次数估算，不是 CPU、内存或流量实测。
+持续打开详情、无额外调用或手动强刷时，默认单个 HTTP 渠道约每小时 30 次采集，单个 CLI/SSH 渠道约 12 次；实际受查询耗时、失败退避和重置边界影响。这是采集次数估算，未测量 CPU / 内存 / 流量；CLI 自身可能发起多个认证和用量请求。关闭所有用量界面后为零自动定时采集。
 
-本机先前的 OpenCode Go、DeepSeek 和 Codex 组合，对应每小时约 120 次直接 HTTP 请求及 60 次 Codex 启动（假设一直可见、无手动刷新）。新策略在不查看时为 **零自动采集**；单个标签页持续打开详情、默认缓存且无手动刷新/额外工具调用时，每小时约 30 次普通检查，上游实际采集次数还会受缓存命中和查询耗时影响。每轮是用量/余额查询，没有发起模型生成请求；Codex/AGY 子进程的启动、认证及内部网络操作由 CLI 实现，不能按一次简单 HTTP 请求计算成本。
 
 ## 各平台取值方法与字段明细
 
@@ -269,6 +271,25 @@ accounts:
 
 ### MiniMax
 
+提供两种查询方式，现有 HTTP 渠道不会自动切换。新增渠道选择 MiniMax →「使用官方 mmx CLI」；修改已有渠道可在「账号与来源」切换。下一步选择 DSH 本机或 SSH 远端，保存并验证连接。
+
+使用 [MiniMax 官方 CLI](https://github.com/MiniMax-AI/cli)，本次核对版本为 **1.0.25**。先在执行机器、对应用户下安装并登录：
+
+```sh
+npm install -g mmx-cli
+mmx auth login
+# 插件实际执行的只读额度查询，可在终端复现：
+mmx quota show --non-interactive --quiet --output json
+# 人工核对官方文本显示：
+mmx quota show
+```
+
+插件通过固定参数调用 mmx；不安装第三方采集器、不读取或复制 mmx 的凭据。CLI 使用执行机器上自己的登录、环境变量、区域和套餐配置，HTTP 的区域与旧 Coding Plan 选择仅对 HTTP 生效。SSH 可执行文件留空时自动检查远端 PATH、登录 Shell PATH 和常见安装目录；自定义路径与 HOME 在高级配置中填写。首次 SSH 连接需自行建立可信主机记录并配置免交互认证。
+
+CLI 当前解析 Token Plan `model_remains`，与 HTTP 共用解析器；mmx 使用按量 API Key 返回的独立余额格式尚未接入，不能当成套餐额度。CLI 的认证优先级、环境变量和底层接口由官方 mmx 管理，插件不会将 DSH 保存的 Key 作为命令参数传入。
+
+HTTP 查询方法：
+
 - 默认引用：`MINIMAX_API_KEY`，需要与所选区域/套餐对应的凭据。
 - 国际站基址 `https://www.minimax.io`；国内站 `https://www.minimaxi.com`。
 - `planType: token`（默认）：`GET /v1/token_plan/remains`。
@@ -277,10 +298,18 @@ accounts:
 
 | 窗口 | 剩余百分比字段 | 重置字段 |
 | --- | --- | --- |
-| 5h | `current_interval_remaining_percent` | `end_time` |
+| 当前周期（由 start_time / end_time 识别，如 5h、24h） | `current_interval_remaining_percent` | `end_time` |
 | Weekly | `current_weekly_remaining_percent` | `weekly_end_time` |
 
-Token Plan 直接使用非负的剩余百分比，不拿计数字段推算分母；boost 超过 100% 时文字保留原值，进度条封顶 100%。旧 Coding Plan 缺少百分比时，`current_interval_usage_count` / `current_weekly_usage_count` 按该旧接口语义解释为**剩余请求数**，而非已用请求数；对应 `*_total_count` 为正时作为总额。实现：[minimax.ts](src/providers/minimax.ts)。
+Token Plan 按官方 mmx 1.0.25 的显示规则解释字段，按以下顺序判断：
+
+1. 同一 `model_remains` 行的 `current_interval_total_count` 和 `current_weekly_total_count` **均为 0**，且 `current_interval_status` 和 `current_weekly_status` **均为 3**：整个池「不在当前套餐中」。不能仅凭单个 `3` 或总额为 0 判断。
+2. 不满足上述条件、但 `current_weekly_status === 3`：周额度「无限」。这不代表所有模型或其他周期也无限。
+3. 有限额度使用非负的 `*_remaining_percent`。有限周额度还乘以 `weekly_boost_permille / 1000`（字段缺失按 1）：例如 80 × 1500 / 1000 = 120%。文字保留超过 100% 的数值，进度条封顶 100%。Token Plan 不用为 0 的计数字段推算分母。
+
+无限和套餐未包含的指标分别以 `entitlement: unlimited | unsupported` 返回，不生成剩余数值、百分比或重置时间，不参与最低额度排序；未包含的视频不会把可用的通用额度判成耗尽。详情和预览按选择显示状态文字；可在预览内容中取消不关注的视频指标。只有未包含指标的账号不具备自动路由资格。当前周期名称按返回时间跨度识别，跨度缺失显示「当前周期」；内部旧 `*-5h` ID 为兼容已保存的显示选择而保留，不代表所有池一定为 5 小时。
+
+旧 Coding Plan 缺少百分比时，`current_interval_usage_count` / `current_weekly_usage_count` 按该旧接口语义解释为**剩余请求数**，而非已用请求数；对应 `*_total_count` 为正时作为总额。实现：[minimax.ts](src/providers/minimax.ts)。
 
 ### Codex
 
@@ -342,10 +371,14 @@ Token Plan 直接使用非负的剩余百分比，不拿计数字段推算分母
 | `usedPercent` | 剩余为 `100 - usedPercent` |
 | `windowDurationMins` | 300 → 5h；10080 → Weekly；其他值保留分钟数 |
 | `resetsAt` | 窗口重置时间 |
-| `credits.balance` | 数值有效且 `credits.unlimited !== true` 时展示 Credits，不当作货币或订阅百分比 |
+| `credits.balance` | 数值有效且 `credits.unlimited !== true` 时展示额外 Credits，不当作货币或订阅百分比 |
 | 顶层或 bucket 的 `planType` | 套餐名称 |
 
 实现：[codex.ts](src/providers/codex.ts)。CLI 内部请求次数和认证刷新由所安装版本决定，插件不直接调用其私有 HTTP 后端。
+
+Codex 存在订阅窗口时，账号健康度由这些窗口判定，额外 credits 不参与耗尽判定；`credits = 0` 显示“额外 Credits：0”，不推断从未充值，不显示周期重置时间。只有 credits、没有订阅窗口的返回仍按余额判断，不全局忽略 credits。预览默认隐藏额外 credits，详情保留。
+
+预览筛选只控制可见指标，`assessmentMeters` 保留完整指标用于同一套账号状态判断。因此取消某个耗尽窗口的预览勾选，不会改变账号健康度或路由资格。默认剩余百分比低于阈值仍提示额度偏低。
 
 ### Antigravity
 
@@ -407,6 +440,7 @@ Claude and GPT models<TAB>Five Hour Limit Remaining<TAB>61%<TAB>2099-01-01T00:00
 
 | 服务方法 | Typert endpoint | 返回 |
 | --- | --- | --- |
+| `getUsageView(preview, force, collect)` | `aiMeter/getUsageView` | UI 按需获取缓存并启动到期任务，返回 pending / nextCheckAt，逐渠道显示；collect=false 只读取进行中任务结果，不启动到期采集 |
 | `testConnection(provider, account)` | `aiMeter/testConnection` | 手动验证单个渠道，跳过缓存重新采集 |
 | `getPreview()` | `aiMeter/getPreview` | 只采集预览渠道，再按指标选择、别名和排序投影；不供路由使用 |
 | `discoverLocal()` | `aiMeter/discoverLocal` | 检测到默认本地凭据/命令的平台 ID，不采集额度、不自动添加 |
@@ -459,7 +493,7 @@ MIT © 2026 percyc
 
 ### 预览与详情窗口
 
-悬停预览按渠道显示紧凑卡片：百分比指标使用剩余进度条（低于 20% 橙色、低于 10% 红色），余额只显示金额。每个周期直接显示浏览器本地时区的重置日期时间与倒计时；未提供时间时明确标注，过期数据使用灰色条。继续遵循已配置的指标选择，不新增后台轮询。
+悬停预览合并平台与渠道标题，正常状态用圆点表示，异常保留文字。每项指标以名称、细进度条、剩余值、简短重置日期紧凑排列；当日显示时间，其他日期显示月/日，鼠标悬停或键盘聚焦可查看完整日期与倒计时。窄屏日期换行；过期数据使用灰色条。额外 credits 与未包含指标默认隐藏，显式选择可展示。各渠道显示最近成功采集时间，不新增后台定时采集。
 
 详情/配置使用原生模态窗口，桌面最大宽度 1440px、高度约 92% 视口，窄屏保留边距。窗口打开时背景控件不可交互，避免宿主对话区的调节条覆盖窗口；支持 Escape、关闭按钮和点击遮罩关闭，关闭后恢复焦点与页面滚动。
 

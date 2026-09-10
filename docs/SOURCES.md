@@ -8,6 +8,7 @@ Reviewed on 2026-09-09. This project implements its own core and adapter modules
 | [dsh-ai-quota](https://github.com/Carrick-K7/dsh-ai-quota) | `1ae812666f1a09269d0e8ff9037130b626381eb2` | Community quota endpoint shapes and integration reference |
 | [agy-quota](https://github.com/tingyi365/agy-quota) | `d750cb28b53190fb102ef4cd6634e189e996e9ae` | Historical prototype reference only; its bridge and JSON parser have been removed in favor of the official AGY CLI |
 | [agy-usage](https://github.com/orrisroot/agy-usage) | README reviewed | Historical research only; not installed, integrated or planned as a runtime dependency |
+| [MiniMax official CLI](https://github.com/MiniMax-AI/cli) | Installed mmx-cli 1.0.25, checked 2026-09-10 | Fixed `quota show --non-interactive --quiet --output json`; not-in-plan combined status/count predicate, weekly unlimited status=3, weekly boost permille; verified against local text and JSON output |
 | [MiniMax Usage](https://github.com/Hukilow/Minimax-usage) | `07db29e02f8a66bf295be61d6f01ff36dd93a13a` | Current Token Plan `model_remains` and authoritative remaining-percent fields |
 | [OpenAI Codex App Server](https://learn.chatgpt.com/docs/app-server) | `initialize`, `initialized`, `account/rateLimits/read` | Multi-bucket rate limits, Unix-second reset, optional credits; subscriptions, not platform API billing |
 | [OpenCode Go](https://opencode.ai/docs/go/) | Go usage windows | Periodic quotas; no hard-coded monetary limits |

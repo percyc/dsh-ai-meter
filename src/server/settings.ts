@@ -33,12 +33,13 @@ export class ChannelSettings {
     const accounts:ChannelConfiguration['accounts']={},info:ChannelConfiguration['credentials']=[];
     for(const provider of providerIdSchema.options){
       const rows=config.accounts[provider] ?? [{id:'default',name:'Default'}];
-      accounts[provider]=rows.map(({id,name,region,planType,enabled,identity,query,presentation})=>({id,name,region,planType,enabled,identity,query,presentation}));
+      accounts[provider]=rows.map(({id,name,region,planType,enabled,identity,query,presentation,refreshIntervalSeconds})=>({id,name,region,planType,enabled,identity,query,presentation,refreshIntervalSeconds}));
       for(const row of rows){
         const query=effectiveQuery(provider,row);
         const explicitMissing=query.kind==='http' && query.auth==='api-key' && !row.credentialEnv;
         const ref=query.kind==='cli' || explicitMissing ? undefined : row.credentialEnv ?? credentialNames[provider];
         let source=provider==='codex' ? 'Codex CLI 自有登录（由 CLI 管理）' : provider==='antigravity' ? '官方 agy CLI 自有登录（插件不读取凭据）' : '未找到凭据';
+        if(provider==='minimax' && query.kind==='cli')source='官方 mmx CLI 自有登录与配置（插件不读取凭据）';
         if(query.kind==='cli' && query.location==='ssh')source=`SSH ${query.sshHost}：远端 CLI 自有登录（未读取本机登录）`;
         if(provider==='antigravity' && query.kind==='cli' && query.location==='local' && !await findCommand(query.executable ?? row.command ?? 'agy')){
           source='未找到配置的官方 agy 命令，请检查可执行文件路径';
@@ -70,7 +71,7 @@ export class ChannelSettings {
     const value=channelSaveSchema.parse(input),config=this.current();
     if(!this.settings?.writable)throw Error('Settings unavailable');
     if(value.revision!==this.revision())throw Error('Configuration changed; reload before saving');
-    const accounts=Object.fromEntries(providerIdSchema.options.map(id=>[id,(value.accounts[id] ?? []).map(row=>({...config.accounts[id]?.find(old=>old.id===row.id),...row}))]));
+    const accounts=Object.fromEntries(providerIdSchema.options.map(id=>[id,(value.accounts[id] ?? []).map(row=>({...config.accounts[id]?.find(old=>old.id===row.id),...row,refreshIntervalSeconds:row.refreshIntervalSeconds}))]));
     await this.settings.replace('dsh-ai-meter',{...config,accounts},value.revision);
     this.changed(this.current());return this.get();
   });}

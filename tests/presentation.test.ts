@@ -27,3 +27,16 @@ test('metric IDs survive currency and MiniMax model order changes',()=>{
   const models=[{model_name:'a',current_interval_remaining_percent:20},{model_name:'b',current_interval_remaining_percent:90}];
   assert.deepEqual(parseMiniMax({model_remains:models}).meters.map(m=>m.id).sort(),parseMiniMax({model_remains:[...models].reverse()}).meters.map(m=>m.id).sort());
 });
+
+test('preview selection does not change account health; supplemental credits are hidden by default',async()=>{
+  const {health}=await import('../src/core/normalize.js');
+  const raw=overview([snapshot]);
+  const preview=projectPreview(raw,{'opencode-go':[{id:'local',presentation:{visible:true,order:0,meterIds:['rolling'],labels:{}}}]});
+  assert.equal(health(preview.snapshots[0]),health(snapshot));assert.equal(health(preview.snapshots[0]),'low');
+  const codex:QuotaSnapshot={...snapshot,provider:'codex',meters:[{...snapshot.meters[0]},{id:'extra',name:'Credits',kind:'credits',unit:'credits',remaining:0},{id:'video',name:'Video',kind:'window',unit:'percent',entitlement:'unsupported'}]};
+  assert.equal(health(codex),'healthy');
+  const projected=projectPreview(overview([codex]),{});assert.deepEqual(projected.snapshots[0].meters.map(m=>m.id),['rolling']);assert.equal(health(projected.snapshots[0]),'healthy');
+  const explicit=projectPreview(overview([codex]),{codex:[{id:'local',presentation:{visible:true,order:0,labels:{},meterIds:['extra']}}]});
+  assert.equal(explicit.snapshots[0].meters[0].remaining,0);assert.equal(health(explicit.snapshots[0]),'healthy');
+  assert.equal(health({...codex,meters:[codex.meters[1]]}),'exhausted');
+});

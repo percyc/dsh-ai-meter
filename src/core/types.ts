@@ -8,6 +8,7 @@ export const meterSchema = z.object({
   id: label, name: label,
   kind: z.enum(['window', 'requests', 'credits', 'balance', 'pool']),
   unit: z.enum(['percent', 'requests', 'credits', 'money', 'tokens', 'unknown']),
+  entitlement: z.enum(['unlimited', 'unsupported']).optional(),
   used: number.nonnegative().optional(), limit: number.nonnegative().optional(),
   remaining: number.optional(), remainingPercent: number.min(0).optional(),
   currency: label.optional(), resetAt: z.iso.datetime().optional(),
@@ -23,6 +24,8 @@ export const snapshotSchema = z.object({
   provider: providerIdSchema, account: accountSchema, status: statusSchema,
   plan: label.optional(), meters: z.array(meterSchema),
   missingMeters:z.array(label).optional(),
+  assessmentMeters:z.array(meterSchema).optional(),
+  pending:z.boolean().optional(), nextCheckAt:z.iso.datetime().optional(),
   fetchedAt: z.iso.datetime(), checkedAt: z.iso.datetime(), expiresAt: z.iso.datetime(),
   source: label, error: errorCodeSchema.optional(),
 });

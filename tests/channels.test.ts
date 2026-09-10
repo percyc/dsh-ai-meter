@@ -79,3 +79,15 @@ test('channel list omits missing implicit sources but keeps explicit accounts fo
     assert.equal(saved.credentials.find(c=>c.provider==='minimax')?.source,'未找到凭据');
   }finally{await ctx.fiber.dispose();if(old===undefined)delete process.env.MINIMAX_API_KEY;else process.env.MINIMAX_API_KEY=old;}
 });
+
+test('refresh interval round-trips and can be reset to automatic through the JSON settings boundary',async()=>{
+  const ctx=new Context();await ctx.plugin(Settings);await ctx.plugin(Credentials);
+  await ctx.plugin(AiMeterService,{accounts:{'opencode-go':[],minimax:[],codex:[],antigravity:[],kimi:[],deepseek:[{id:'test',refreshIntervalSeconds:600}],'302ai':[]}});
+  try{
+    const initial=await ctx.aiMeter.getConfiguration();assert.equal(initial.accounts.deepseek?.[0].refreshIntervalSeconds,600);
+    const accounts=structuredClone(initial.accounts);delete accounts.deepseek![0].refreshIntervalSeconds;
+    const saved=await ctx.aiMeter.saveConfiguration(JSON.parse(JSON.stringify({revision:initial.revision,accounts})));
+    assert.equal(saved.accounts.deepseek?.[0].refreshIntervalSeconds,undefined);
+    assert.equal((ctx.get('settings' as never) as unknown as Settings).value.accounts.deepseek[0].refreshIntervalSeconds,undefined);
+  }finally{await ctx.fiber.dispose();}
+});

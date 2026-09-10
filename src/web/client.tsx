@@ -27,26 +27,26 @@ export function apply(ctx: ClientContext) {
   };
   let generation=0;
   const caches=new Map<string,{value?:Overview;attempted:number;error?:unknown;inflight?:Promise<Overview>}>();
-  const fetchUsage=(kind:'getPreview'|'getAllUsage',force=false):Promise<Overview>=>{
+  const fetchUsage=(kind:'getPreview'|'getAllUsage',force=false,readOnly=false):Promise<Overview>=>{
     let cache=caches.get(kind);if(!cache){cache={attempted:0};caches.set(kind,cache);}
     if(cache.inflight)return cache.inflight;
-    if(!force && Date.now()-cache.attempted<15000){if(cache.error)return Promise.reject(cache.error);if(cache.value)return Promise.resolve(cache.value);}
+    if(!force && !cache.value?.snapshots.some(s=>s.pending || Date.parse(s.nextCheckAt ?? s.expiresAt)<=Date.now()) && Date.now()-cache.attempted<15000){if(cache.error)return Promise.reject(cache.error);if(cache.value)return Promise.resolve(cache.value);}
     const entry=cache,version=generation;entry.attempted=Date.now();
-    const method=force?'refresh':kind,args=method==='getPreview'?[]:[undefined];
+    const method='getUsageView',args=[kind==='getPreview',force,!readOnly];
     const pending=invoke(method,...args).then(overviewSchema.parse).then(value=>{if(version===generation){entry.value=value;entry.error=undefined;}return value;}).catch(error=>{if(version===generation)entry.error=error;throw error;}).finally(()=>{if(entry.inflight===pending)entry.inflight=undefined;});
     entry.inflight=pending;return pending;
   };
-  const query=()=>fetchUsage('getAllUsage'),previewQuery=()=>fetchUsage('getPreview');
+  const query=(readOnly=false)=>fetchUsage('getAllUsage',false,readOnly),previewQuery=(readOnly=false)=>fetchUsage('getPreview',false,readOnly);
   const refresh=()=>{caches.delete('getPreview');return fetchUsage('getAllUsage',true);};
   const invalidate=(value:unknown)=>{generation++;caches.clear();return channelConfigurationSchema.parse(value);};
   const channels={
     getConfiguration:async()=>channelConfigurationSchema.parse(await invoke('getConfiguration')),
     saveConfiguration:async(input:ChannelSave)=>invalidate(await invoke('saveConfiguration',input)),
     setCredential:async(input:SecretSave)=>invalidate(await invoke('setCredential',input)),
-    inspect:async(provider:ProviderId,account:string)=>snapshotSchema.parse(await invoke('testConnection',provider,account)),
+    inspect:async(provider:ProviderId,account:string)=>{const value=snapshotSchema.parse(await invoke('testConnection',provider,account));generation++;caches.clear();return value;},
     discoverLocal:async()=>await invoke('discoverLocal') as ProviderId[],
   };
-  const props={query,refresh,channels,previewQuery};
+  const props={query,refresh,channels,previewQuery,peek:(preview=false)=>caches.get(preview?'getPreview':'getAllUsage')?.value};
   ctx.effect(() => {
     const tag = document.createElement('style'); tag.dataset.aiMeter=''; tag.textContent=styles; document.head.appendChild(tag);
     return () => tag.remove();

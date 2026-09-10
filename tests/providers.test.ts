@@ -66,3 +66,32 @@ test('unexpected payloads and business errors fail explicitly', () => {
   assert.throws(() => parseMiniMax({base_resp:{status_code:1004},model_remains:[]}),/unauthorized/);
   assert.throws(() => parseDeepSeek({balance_infos:[{total_balance:null}]}),/invalid-response/);
 });
+
+test('MiniMax official status rules distinguish unlimited weekly quota from a pool not in plan', () => {
+  const base={current_interval_total_count:0,current_weekly_total_count:0,current_interval_usage_count:0,current_weekly_usage_count:0,current_interval_remaining_percent:92,current_weekly_remaining_percent:100,current_weekly_status:3,start_time:4070890800000,end_time:4070908800000,weekly_end_time:4070908800000};
+  for(const legacy of [false,true]){
+    const {meters}=parseMiniMax({model_remains:[{...base,model_name:'general',current_interval_status:1},{...base,model_name:'video',current_interval_status:3,start_time:4070822400000}]},legacy);
+    assert.equal(meters[0].remainingPercent,92);
+    assert.equal(meters[0].name,'general · 5h');
+    assert.equal(meters[1].entitlement,'unlimited');
+    assert.equal(meters[2].name,'video · 24h');
+    assert.deepEqual(meters.slice(2).map(m=>m.entitlement),['unsupported','unsupported']);
+    for(const m of meters.slice(1)){
+      assert.equal(m.remainingPercent,undefined);assert.equal(m.remaining,undefined);assert.equal(m.limit,undefined);assert.equal(m.resetAt,undefined);
+    }
+  }
+  // status=3 alone (or missing totals) does not establish a pool exclusion.
+  const {meters}=parseMiniMax({model_remains:[{current_interval_status:3,current_interval_remaining_percent:100,current_weekly_status:3,current_weekly_remaining_percent:100}]});
+  assert.equal(meters[0].entitlement,undefined);assert.equal(meters[1].entitlement,'unlimited');
+});
+test('MiniMax weekly boost is permille and missing interval duration is not invented',()=>{
+  const {meters}=parseMiniMax({model_remains:[{model_name:'general',current_interval_remaining_percent:60,current_weekly_remaining_percent:80,weekly_boost_permille:1500}]});
+  assert.equal(meters[0].name,'general · 当前周期');
+  assert.deepEqual(meters.map(m=>m.remainingPercent),[60,120]);
+});
+
+test('Codex zero extra credits do not imply an exhausted subscription',()=>{
+  const usage=parseCodex({rateLimits:{primary:{usedPercent:20},secondary:{usedPercent:40},credits:{balance:'0',hasCredits:false,unlimited:false}}});
+  assert.equal(usage.meters.at(-1)?.remaining,0);
+  assert.match(usage.meters.at(-1)!.name,/额外 Credits/);
+});

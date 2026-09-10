@@ -26,6 +26,7 @@ export function httpCurl(id:ProviderId,a:MethodAccount={}){
 export function queryDescription(id:ProviderId,a:MethodAccount){
   const q=effectiveQuery(id,a);
   if(q.kind==='http')return `DSH 服务端 GET ${httpEndpoint(id,a)}；Authorization: Bearer <凭据引用>。${q.auth==='auto'?'复用已有凭据；OpenCode/Kimi 可回退到本机登录文件。':'使用此渠道保存的 API Key / Access Token，不回退读取本机登录文件。'} Cookie 查询尚未验证，当前不可用。`;
+  if(id==='minimax')return `${q.location==='ssh'?`SSH 主机 ${q.sshHost}`:'DSH 本机'}：${q.executable ?? 'mmx'} quota show --non-interactive --quiet --output json。${q.home?`HOME=${q.home}。`:''}使用执行机器上 mmx 自有登录、区域和套餐配置；插件不读取 CLI 凭据文件。可执行文件留空时通过 PATH 查找，SSH 还检查登录 Shell PATH 和常见安装目录。解析 model_remains，与 HTTP Token Plan 共用规则；按量 API 余额暂不支持。官方工具：https://github.com/MiniMax-AI/cli。`;
   const executable=q.executable ?? a.command ?? (id==='codex'?'codex':'agy');
   const home=q.home ?? a.home;
   const command=`${executable}${a.args?.length?' <服务端预设参数不回显>':''} ${id==='codex'?'app-server':'--print /usage'}`;
@@ -40,7 +41,7 @@ id=2 的 result 即原始额度；剩余%=100−usedPercent。查完 Ctrl+C。�
 export function meterDescription(id:ProviderId,m:QuotaMeter){
   switch(id){
     case 'opencode-go':return `usage.${m.id}.percent 是已用百分比，剩余 = 100 − percent；resetsAt 是重置时间。`;
-    case 'minimax':return `model_remains[] 按 model_name 对应账号池；${m.name.endsWith('Weekly')?'current_weekly':'current_interval'}_remaining_percent 为剩余百分比。旧 Coding Plan 缺失百分比时 usage_count 表示剩余请求数，total_count 为总额。`;
+    case 'minimax':return `model_remains[] 按 model_name 对应账号池；${m.name.endsWith('Weekly')?'current_weekly':'current_interval'}_remaining_percent 为剩余百分比。两周期 total_count=0 且两周期 status=3 表示不在当前套餐中；除此之外 current_weekly_status=3 表示周额度无限。有限周额度乘 weekly_boost_permille/1000（缺失按 1），不为无限或未包含指标显示百分比或重置时间。旧 Coding Plan 缺失百分比时 usage_count 表示剩余请求数，total_count 为总额。`;
     case 'codex':return m.kind==='credits'?'对应 limit bucket 的 credits.balance；unlimited=true 时不展示数值余额。':`对应 limit bucket 的 ${m.id.endsWith('secondary')?'secondary':'primary'}.usedPercent；剩余 = 100 − usedPercent，windowDurationMins 表示周期，resetsAt 表示重置时间。优先 rateLimitsByLimitId，兼容 rateLimits。`;
     case 'antigravity':return '官方 agy --print /usage 每行四列：模型组、周期、剩余百分比、重置时间。百分比已经是剩余值，不再执行 100 − value；模型组独立计量，按原样保留 5h / weekly。';
     case 'kimi':return `${m.id==='weekly'?'usage':'limits[].detail'} 的 remaining / limit × 100；缺 remaining 时由 limit − used 推导。resetTime 为 reset，窗口由 duration/timeUnit 定义；单位保留未知。`;

@@ -11,6 +11,7 @@ const providersSchema = z.array(z.object({id:providerIdSchema, name:z.string(), 
 const healthResult = z.array(z.object({provider:providerIdSchema, account:z.string(), health:healthSchema}));
 const filter = parameter('filter', filterSchema);
 const methods = [
+  {method:'getUsageView',parameters:[parameter('preview',z.boolean()),parameter('force',z.boolean()),parameter('collect',z.boolean())],schema:overviewSchema},
   {method:'testConnection', parameters:[parameter('provider',providerIdSchema),parameter('account',z.string())], schema:snapshotSchema},
   {method:'discoverLocal', parameters:[], schema:z.array(providerIdSchema)},
   {method:'getPreview', parameters:[], schema:overviewSchema},

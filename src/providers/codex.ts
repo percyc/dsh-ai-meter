@@ -21,7 +21,7 @@ export function parseCodex(value: unknown): ProviderUsage {
         remainingPercent:used === undefined ? undefined : 100-used, resetAt:iso(w.resetsAt)});
     }
     const credits = object(bucket.credits), remaining = numeric(credits.balance);
-    if (remaining !== undefined && credits.unlimited !== true) meters.push({id:`${scope}-credits`, name:`${scope} · Credits`, kind:'credits', unit:'credits', scope, remaining});
+    if (remaining !== undefined && credits.unlimited !== true) meters.push({id:`${scope}-credits`, name:`${scope} · 额外 Credits`, kind:'credits', unit:'credits', scope, remaining});
   }
   if (!meters.length) throw new MeterError('unsupported');
   return {source:'Codex app-server account/rateLimits/read', plan, meters};

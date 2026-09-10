@@ -10,14 +10,15 @@ export const presentationSchema=z.object({
   meterIds:z.array(z.string().min(1).max(160)).max(200).refine(ids=>new Set(ids).size===ids.length,'Duplicate metric').optional(),
   labels:z.record(z.string().max(160),z.string().max(160)).default({}),
 });
-export const channelFields={enabled:z.boolean().optional(),identity:z.string().max(160).optional(),query:querySchema.optional(),presentation:presentationSchema.optional()};
+export const channelFields={refreshIntervalSeconds:z.number().int().min(30).max(3600).optional(),enabled:z.boolean().optional(),identity:z.string().max(160).optional(),query:querySchema.optional(),presentation:presentationSchema.optional()};
 export type QueryConfig=z.infer<typeof querySchema>;
 export type Presentation=z.infer<typeof presentationSchema>;
 export interface ChannelOptions {enabled?:boolean;identity?:string;query?:QueryConfig;presentation?:Presentation}
 export const cliProvider=(id:ProviderId)=>id==='codex'||id==='antigravity';
+export const supportsCli=(id:ProviderId)=>cliProvider(id)||id==='minimax';
 export function effectiveQuery(id:ProviderId,row:ChannelOptions):QueryConfig{return row.query ?? (cliProvider(id)?{kind:'cli',location:'local'}:{kind:'http',auth:'auto'});}
 export function validateChannels(accounts:Partial<Record<ProviderId,ChannelOptions[]>>,ctx:z.RefinementCtx){
   for(const [provider,rows] of Object.entries(accounts))for(const [index,row] of (rows ?? []).entries()){
-    if(row.query && (row.query.kind==='cli')!==cliProvider(provider as ProviderId))ctx.addIssue({code:'custom',path:[provider,index,'query'],message:'Query method is not supported for this provider'});
+    if(row.query && (row.query.kind==='cli' ? !supportsCli(provider as ProviderId) : cliProvider(provider as ProviderId)))ctx.addIssue({code:'custom',path:[provider,index,'query'],message:'Query method is not supported for this provider'});
   }
 }

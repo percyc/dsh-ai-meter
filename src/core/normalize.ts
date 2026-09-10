@@ -22,6 +22,10 @@ export function iso(value: unknown): string | undefined {
 }
 export function normalizeMeter(m: QuotaMeter): QuotaMeter {
   const result = { ...m };
+  if (result.entitlement) {
+    delete result.remaining; delete result.remainingPercent; delete result.used; delete result.limit; delete result.resetAt;
+    return result;
+  }
   if (result.remaining === undefined && result.limit !== undefined && result.used !== undefined) {
     result.remaining = Math.max(0, result.limit - result.used);
   }
@@ -36,16 +40,20 @@ export function fresh(s: QuotaSnapshot, now = Date.now()): boolean {
 export function health(s: QuotaSnapshot, threshold = 10, now = Date.now()): Health {
   if (s.status !== 'ok') return s.status;
   if (!fresh(s, now)) return 'stale';
+  const full = s.assessmentMeters ?? s.meters;
+  const subscription = s.provider === 'codex' && full.some(m => m.kind === 'window');
+  const meters = full.filter(m => m.entitlement !== 'unsupported' && !(subscription && m.kind === 'credits'));
+  if (full.length && !meters.length) return 'unsupported';
   // Passed reset times require an upstream refresh, never a locally invented refill.
-  if (s.meters.some(m => m.resetAt && Date.parse(m.resetAt) <= now)) return 'unknown';
-  if (s.meters.some(m => m.remainingPercent === 0 || (m.remaining !== undefined && m.remaining <= 0))) return 'exhausted';
-  if (s.meters.some(m => m.remainingPercent !== undefined && m.remainingPercent < threshold)) return 'low';
-  if (!s.meters.length || s.meters.some(m => m.remainingPercent === undefined && m.remaining === undefined)) return 'unknown';
+  if (meters.some(m => m.resetAt && Date.parse(m.resetAt) <= now)) return 'unknown';
+  if (meters.some(m => m.remainingPercent === 0 || (m.remaining !== undefined && m.remaining <= 0))) return 'exhausted';
+  if (meters.some(m => m.remainingPercent !== undefined && m.remainingPercent < threshold)) return 'low';
+  if (!meters.length || meters.some(m => m.entitlement !== 'unlimited' && m.remainingPercent === undefined && m.remaining === undefined)) return 'unknown';
   return 'healthy';
 }
 export function overview(snapshots: QuotaSnapshot[], now = Date.now(), lowQuotaPercent = 10): Overview {
   const candidates = snapshots.filter(s => fresh(s, now)).flatMap(s => s.meters
-    .filter(m => m.remainingPercent !== undefined && (!m.resetAt || Date.parse(m.resetAt) > now))
+    .filter(m => !m.entitlement && m.remainingPercent !== undefined && (!m.resetAt || Date.parse(m.resetAt) > now))
     .map(m => ({provider: s.provider, account: s.account.name, meter: m.name, remainingPercent: m.remainingPercent!})));
   candidates.sort((a, b) => a.remainingPercent - b.remainingPercent);
   return {generatedAt: new Date(now).toISOString(), lowQuotaPercent, snapshots, lowest: candidates[0] ?? null};
