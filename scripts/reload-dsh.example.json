@@ -1,0 +1,33 @@
+{
+  "dshSource": "/path/to/deepseek-harness",
+  "profile": "web",
+  "server": {
+    "host": "127.0.0.1",
+    "port": 3080,
+    "trustedHost": "dsh.example.com"
+  },
+  "enabled": ["cangzhi", "ai-meter"],
+  "requiredPackages": [
+    "@deepseek-ai/dsh-host-directory-picker-browse",
+    "@deepseek-ai/dsh-client-ui-directory-picker-browse"
+  ],
+  "requiredDisabledRows": ["directory-picker"],
+  "plugins": {
+    "cangzhi": {
+      "package": "dsh-cangzhi",
+      "path": "/path/to/dsh-cangzhi",
+      "build": [
+        ["{dshSource}/node_modules/.bin/tsdown", "--config", "tsdown.config.ts"],
+        ["node", "scripts/rewrite-client-id.mjs"],
+        ["pnpm", "check"]
+      ],
+      "test": [["pnpm", "test"]]
+    },
+    "ai-meter": {
+      "package": "dsh-ai-meter",
+      "path": "/path/to/dsh-ai-meter",
+      "build": [["npm", "run", "build"], ["npm", "run", "typecheck"]],
+      "test": [["npm", "test"]]
+    }
+  }
+}

@@ -1,0 +1,7 @@
+- insert:
+    - id: ai-meter
+      name: dsh-ai-meter
+      config:
+        cacheTtlMs: 120000
+        timeoutMs: 15000
+        lowQuotaPercent: 10

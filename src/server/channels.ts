@@ -1,0 +1,12 @@
+import { z } from 'zod';
+import { channelFields, validateChannels } from '../core/channel.js';
+import { providerIdSchema } from '../core/types.js';
+export const channelSchema = z.object({id:z.string().regex(/^[A-Za-z0-9_-]{1,80}$/),name:z.string().max(160).optional(),region:z.enum(['global','cn']).optional(),planType:z.enum(['token','coding']).optional(),...channelFields});
+export const channelsSchema = z.partialRecord(providerIdSchema,z.array(channelSchema).max(30).refine(rows=>new Set(rows.map(r=>r.id)).size===rows.length,'Duplicate account id')).superRefine(validateChannels);
+export const channelSaveSchema = z.object({revision:z.number().int(),accounts:channelsSchema});
+export const secretSaveSchema = z.object({revision:z.number().int(),provider:providerIdSchema,account:z.string().min(1).max(80),secret:z.string().trim().min(1).max(16384)});
+export const channelConfigurationSchema = z.object({revision:z.number().int(),writable:z.boolean(),accounts:channelsSchema,credentials:z.array(z.object({provider:providerIdSchema,account:z.string(),source:z.string(),method:z.string().optional(),reference:z.string().optional(),canSet:z.boolean()}))});
+export type ChannelConfiguration = z.infer<typeof channelConfigurationSchema>;
+export type ChannelSave = z.infer<typeof channelSaveSchema>;
+export type SecretSave = z.infer<typeof secretSaveSchema>;
+export const credentialNames: Partial<Record<z.infer<typeof providerIdSchema>,string>> = {'opencode-go':'OPENCODE_GO_API_KEY',minimax:'MINIMAX_API_KEY',kimi:'KIMI_CODE_ACCESS_TOKEN',deepseek:'DEEPSEEK_API_KEY','302ai':'AI_302_API_KEY'};

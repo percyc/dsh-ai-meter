@@ -1,0 +1,21 @@
+node_modules/
+dist/
+*.tgz
+.env
+.env.*
+!.env.example
+coverage/
+test-results/
+playwright-report/
+__pycache__/
+*.pyc
+
+# Runtime credentials and local deployment configuration
+.credentials.yaml
+.credentials.yml
+auth.json
+oauth_creds.json
+*.pem
+*.key
+reload.local.json
+*.log

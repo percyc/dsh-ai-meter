@@ -1,0 +1,12 @@
+DSH AI Meter — Copyright (c) 2026 percyc. MIT licensed.
+
+Original implementation inspired by these open-source integration and protocol references:
+- Carrick-K7/dsh-ai-quota (MIT)
+- tingyi365/agy-quota (MIT)
+- orrisroot/agy-usage (MIT)
+- Hukilow/Minimax-usage (MIT)
+- deepseek-ai/deepseek-harness (MIT)
+
+Their source is not vendored. See docs/SOURCES.md for reviewed revisions.
+The former agy-quota bridge has been removed. Antigravity collection now invokes the official agy CLI; historical references above are not runtime dependencies.
+Third-party npm dependencies retain their respective licenses.
