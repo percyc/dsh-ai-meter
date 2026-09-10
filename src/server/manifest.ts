@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { accountSchema, healthSchema, overviewSchema, providerIdSchema, snapshotSchema } from '../core/types.js';
 import { channelConfigurationSchema, channelSaveSchema, secretSaveSchema } from './channels.js';
-export const filterSchema = z.array(providerIdSchema).max(7).optional();
+export const filterSchema = z.array(providerIdSchema).max(providerIdSchema.options.length).optional();
 const codec = (schema: z.ZodType, type: string) => ({mode:'strict' as const, typeSymbol:`dsh-ai-meter#${type}`, schema});
 const parameter = (name: string, schema: z.ZodType) => ({
   name, wire:name, source:'json' as const, codec:codec(schema, name),

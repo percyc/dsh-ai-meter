@@ -35,11 +35,11 @@ export class AiMeterService extends TypertRemoteService {
     };
     this.localDiscovery=async()=>{
       const probe=new MeterRegistry(config);
-      try{for(const provider of createProviders({},resolve))probe.register(provider);return (await probe.listProviders()).filter(p=>p.detected).map(p=>p.id);}
+      try{for(const provider of createProviders({volcengine:[{id:'default'}]},resolve))probe.register(provider);return (await probe.listProviders()).filter(p=>p.detected).map(p=>p.id);}
       finally{probe.dispose();}
     };
     for (const provider of createProviders(config.accounts, resolve)) this.registry.register(provider);
-    const signature=(value:MeterConfig)=>JSON.stringify({...value,accounts:Object.fromEntries(Object.entries(value.accounts).map(([provider,rows])=>[provider,rows?.map(({presentation,identity,...row})=>row)]))},(_key,item)=>item && typeof item==='object' && !Array.isArray(item)?Object.fromEntries(Object.keys(item).sort().map(key=>[key,item[key]])):item);
+    const signature=(value:MeterConfig)=>JSON.stringify({...value,accounts:Object.fromEntries(Object.entries({volcengine:[],...value.accounts}).map(([provider,rows])=>[provider,rows?.map(({presentation,identity,...row})=>row)]))},(_key,item)=>item && typeof item==='object' && !Array.isArray(item)?Object.fromEntries(Object.keys(item).sort().map(key=>[key,item[key]])):item);
     let activeConfig = signature(config);
     this.channels = new ChannelSettings(ctx, config, (next, force = false) => {
       if (!force && signature(next) === activeConfig) return;

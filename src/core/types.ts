@@ -1,13 +1,13 @@
 import { z } from 'zod';
 
-export const providerIdSchema = z.enum(['opencode-go', 'minimax', 'codex', 'antigravity', 'kimi', 'deepseek', '302ai']);
+export const providerIdSchema = z.enum(['opencode-go', 'minimax', 'codex', 'antigravity', 'kimi', 'deepseek', '302ai', 'volcengine']);
 export type ProviderId = z.infer<typeof providerIdSchema>;
 const number = z.number().finite();
 const label = z.string().max(160);
 export const meterSchema = z.object({
   id: label, name: label,
   kind: z.enum(['window', 'requests', 'credits', 'balance', 'pool']),
-  unit: z.enum(['percent', 'requests', 'credits', 'money', 'tokens', 'unknown']),
+  unit: z.enum(['percent', 'requests', 'credits', 'money', 'tokens', 'afp', 'unknown']),
   entitlement: z.enum(['unlimited', 'unsupported']).optional(),
   used: number.nonnegative().optional(), limit: number.nonnegative().optional(),
   remaining: number.optional(), remainingPercent: number.min(0).optional(),

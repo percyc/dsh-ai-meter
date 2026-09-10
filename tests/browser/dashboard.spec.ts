@@ -362,3 +362,31 @@ test('Codex credits remain informational; validation invalidates preview and cha
   await page.getByText('刷新周期',{exact:true}).click();
   await expect(page.getByRole('combobox',{name:'刷新周期',exact:true})).toHaveValue('600');
 });
+
+test('Volcengine official CLI channel supports profile, product, SSH and quota selection',async({page})=>{
+  await page.goto('/');await page.getByRole('button',{name:'配置渠道',exact:true}).click();
+  await page.getByRole('button',{name:'＋ 新增渠道',exact:true}).click();
+  await page.getByRole('combobox',{name:'新增渠道平台',exact:true}).selectOption('volcengine');
+  await page.getByRole('button',{name:'开始配置 →',exact:true}).click();
+  await expect(page.getByRole('button',{name:/使用官方 arkcli/})).toBeVisible();
+  await expect(page.getByRole('button',{name:/填写 API Key/})).toHaveCount(0);
+  await page.getByRole('textbox',{name:'渠道名称',exact:true}).fill('ARK Work');
+  await page.getByRole('button',{name:'下一步：连接配置 →',exact:true}).click();
+  await page.getByRole('textbox',{name:'ARK profile',exact:true}).fill('work-profile');
+  await page.getByRole('combobox',{name:'ARK 套餐类型',exact:true}).selectOption('coding-plan');
+  await page.getByRole('combobox',{name:'执行位置',exact:true}).selectOption('ssh');
+  await page.getByRole('textbox',{name:'SSH 主机',exact:true}).fill('workstation');
+  await expect(page.locator('.aim-connection-note code')).toContainText('arkcli usage plan --format json --product coding-plan --profile work-profile');
+  await page.getByRole('button',{name:'保存并验证连接',exact:true}).click();
+  await expect(page.getByText('连接成功 · 找到 3 项指标')).toBeVisible();
+  await page.getByRole('button',{name:'选择预览指标 →',exact:true}).click();
+  await expect(page.getByRole('checkbox',{name:'Coding Plan · 本周期',exact:true})).toBeVisible();
+  await page.getByRole('checkbox',{name:'显示这个渠道',exact:true}).check();
+  await page.getByRole('button',{name:'保存显示设置',exact:true}).click();
+  await page.getByRole('button',{name:'← 返回渠道列表',exact:true}).click();
+  const row=page.getByRole('article',{name:'火山方舟 ARK Work',exact:true});
+  await expect(row).toContainText('SSH · workstation');
+  await row.getByRole('button',{name:'编辑',exact:true}).click();
+  await expect(page.getByRole('textbox',{name:'ARK profile',exact:true})).toHaveValue('work-profile');
+  await expect(page.getByRole('combobox',{name:'ARK 套餐类型',exact:true})).toHaveValue('coding-plan');
+});

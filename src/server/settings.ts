@@ -32,13 +32,14 @@ export class ChannelSettings {
     const revision=this.revision(),config=this.current(),credentials=this.ctx.get('credentials');
     const accounts:ChannelConfiguration['accounts']={},info:ChannelConfiguration['credentials']=[];
     for(const provider of providerIdSchema.options){
-      const rows=config.accounts[provider] ?? [{id:'default',name:'Default'}];
-      accounts[provider]=rows.map(({id,name,region,planType,enabled,identity,query,presentation,refreshIntervalSeconds})=>({id,name,region,planType,enabled,identity,query,presentation,refreshIntervalSeconds}));
+      const rows=config.accounts[provider] ?? (provider==='volcengine'?[]:[{id:'default',name:'Default'}]);
+      accounts[provider]=rows.map(({id,name,region,planType,enabled,identity,query,presentation,refreshIntervalSeconds,arkProfile,arkProduct})=>({id,name,region,planType,enabled,identity,query,presentation,refreshIntervalSeconds,arkProfile,arkProduct}));
       for(const row of rows){
         const query=effectiveQuery(provider,row);
         const explicitMissing=query.kind==='http' && query.auth==='api-key' && !row.credentialEnv;
         const ref=query.kind==='cli' || explicitMissing ? undefined : row.credentialEnv ?? credentialNames[provider];
         let source=provider==='codex' ? 'Codex CLI 自有登录（由 CLI 管理）' : provider==='antigravity' ? '官方 agy CLI 自有登录（插件不读取凭据）' : '未找到凭据';
+        if(provider==='volcengine')source='官方 arkcli 自有登录与 profile（插件不读取凭据）';
         if(provider==='minimax' && query.kind==='cli')source='官方 mmx CLI 自有登录与配置（插件不读取凭据）';
         if(query.kind==='cli' && query.location==='ssh')source=`SSH ${query.sshHost}：远端 CLI 自有登录（未读取本机登录）`;
         if(provider==='antigravity' && query.kind==='cli' && query.location==='local' && !await findCommand(query.executable ?? row.command ?? 'agy')){
@@ -71,7 +72,7 @@ export class ChannelSettings {
     const value=channelSaveSchema.parse(input),config=this.current();
     if(!this.settings?.writable)throw Error('Settings unavailable');
     if(value.revision!==this.revision())throw Error('Configuration changed; reload before saving');
-    const accounts=Object.fromEntries(providerIdSchema.options.map(id=>[id,(value.accounts[id] ?? []).map(row=>({...config.accounts[id]?.find(old=>old.id===row.id),...row,refreshIntervalSeconds:row.refreshIntervalSeconds}))]));
+    const accounts=Object.fromEntries(providerIdSchema.options.map(id=>[id,(value.accounts[id] ?? []).map(row=>({...config.accounts[id]?.find(old=>old.id===row.id),...row,refreshIntervalSeconds:row.refreshIntervalSeconds,arkProfile:row.arkProfile,arkProduct:row.arkProduct}))]));
     await this.settings.replace('dsh-ai-meter',{...config,accounts},value.revision);
     this.changed(this.current());return this.get();
   });}

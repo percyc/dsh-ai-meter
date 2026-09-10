@@ -1,3 +1,4 @@
+import { VolcengineProvider } from './volcengine.js';
 import { OpenCodeProvider } from './opencode-go.js';
 import { MiniMaxProvider } from './minimax.js';
 import { CodexProvider } from './codex.js';
@@ -8,8 +9,8 @@ import { AI302Provider } from './302ai.js';
 import type { ProviderId } from '../core/types.js';
 import type { AccountConfig, ResolveSecret } from './shared.js';
 export function createProviders(accounts: Partial<Record<ProviderId, AccountConfig[]>>, resolve: ResolveSecret) {
-  return [OpenCodeProvider, MiniMaxProvider, CodexProvider, AntigravityProvider, KimiProvider, DeepSeekProvider, AI302Provider].map(Provider => {
+  return [OpenCodeProvider, MiniMaxProvider, CodexProvider, AntigravityProvider, KimiProvider, DeepSeekProvider, AI302Provider, VolcengineProvider].map(Provider => {
     const id = new Provider([], resolve).id;
-    return new Provider((accounts[id] ?? [{id:'default', name:'Default'}]).filter(a=>a.enabled!==false), resolve);
-  }).filter(p => (accounts[p.id] ?? [{id:'default'}]).some(a=>a.enabled!==false));
+    return new Provider((accounts[id] ?? (id==='volcengine'?[]:[{id:'default', name:'Default'}])).filter(a=>a.enabled!==false), resolve);
+  }).filter(p => (accounts[p.id] ?? (p.id==='volcengine'?[]:[{id:'default'}])).some(a=>a.enabled!==false));
 }

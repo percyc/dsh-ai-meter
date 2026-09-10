@@ -3,14 +3,15 @@ import { findCommand } from './shared.js';
 import { MeterError } from '../core/errors.js';
 import { querySchema } from '../core/channel.js';
 export const shellQuote=(value:string)=>"'"+value.replace(/'/g,"'\\''")+"'";
-export function commandPlan(a:AccountConfig,command:string,args:string[],homeVariable:'CODEX_HOME'|'HOME') {
+export function commandPlan(a:AccountConfig,command:string,args:string[],homeVariable:'CODEX_HOME'|'HOME',environment:Record<string,string>={}) {
   const q=a.query?.kind==='cli'?querySchema.parse(a.query):undefined;
   const cli=q?.kind==='cli'?q:undefined;
   const executable=cli?.executable ?? command,home=cli?.home ?? a.home;
   if(executable.startsWith('-'))throw new MeterError('command-failed');
-  if(cli?.location!=='ssh')return {command:executable,args,env:home?{...process.env,...(homeVariable==='HOME'?{HOME:home,USERPROFILE:home}:{CODEX_HOME:home})}:process.env};
+  if(cli?.location!=='ssh')return {command:executable,args,env:home?{...process.env,...environment,...(homeVariable==='HOME'?{HOME:home,USERPROFILE:home}:{CODEX_HOME:home})}:{...process.env,...environment}};
   // OpenSSH joins its remote command through a shell: quote each word, including configured paths.
-  const words=home?['env',`${homeVariable}=${home}`,executable,...args]:[executable,...args];
+  const assignments=[...Object.entries(environment).map(([key,value])=>`${key}=${value}`),...(home?[`${homeVariable}=${home}`]:[])];
+  const words=assignments.length?['env',...assignments,executable,...args]:[executable,...args];
   if(words.some(v=>v.includes('\0')))throw new MeterError('command-failed');
   const direct='exec '+words.map(shellQuote).join(' ');
   // Discover only bare default commands. Explicit paths remain deterministic.
@@ -31,8 +32,8 @@ ${direct}`;
   const remote=auto?'exec /bin/sh -c '+shellQuote(discovery):direct;
   return {command:'ssh',args:['-T','-a','-x','-o','BatchMode=yes','-o','StrictHostKeyChecking=yes','-o','ConnectTimeout=8','-o','ServerAliveInterval=5','-o','ServerAliveCountMax=1','-o','ClearAllForwardings=yes','-o','RemoteCommand=none','--',cli.sshHost!,remote],env:process.env};
 }
-export async function executablePlan(a:AccountConfig,command:string,args:string[],homeVariable:'CODEX_HOME'|'HOME'){
-  const plan=commandPlan(a,command,args,homeVariable),executable=await findCommand(plan.command);
+export async function executablePlan(a:AccountConfig,command:string,args:string[],homeVariable:'CODEX_HOME'|'HOME',environment:Record<string,string>={}){
+  const plan=commandPlan(a,command,args,homeVariable,environment),executable=await findCommand(plan.command);
   if(!executable)throw new MeterError('not-installed');
   return {...plan,command:executable};
 }

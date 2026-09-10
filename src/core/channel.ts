@@ -10,11 +10,12 @@ export const presentationSchema=z.object({
   meterIds:z.array(z.string().min(1).max(160)).max(200).refine(ids=>new Set(ids).size===ids.length,'Duplicate metric').optional(),
   labels:z.record(z.string().max(160),z.string().max(160)).default({}),
 });
-export const channelFields={refreshIntervalSeconds:z.number().int().min(30).max(3600).optional(),enabled:z.boolean().optional(),identity:z.string().max(160).optional(),query:querySchema.optional(),presentation:presentationSchema.optional()};
+export const arkProducts=['agent-plan','coding-plan','agent-plan-team','coding-plan-team'] as const;
+export const channelFields={arkProfile:text.max(160).optional(),arkProduct:z.enum(arkProducts).optional(),refreshIntervalSeconds:z.number().int().min(30).max(3600).optional(),enabled:z.boolean().optional(),identity:z.string().max(160).optional(),query:querySchema.optional(),presentation:presentationSchema.optional()};
 export type QueryConfig=z.infer<typeof querySchema>;
 export type Presentation=z.infer<typeof presentationSchema>;
-export interface ChannelOptions {enabled?:boolean;identity?:string;query?:QueryConfig;presentation?:Presentation}
-export const cliProvider=(id:ProviderId)=>id==='codex'||id==='antigravity';
+export interface ChannelOptions {arkProfile?:string;arkProduct?:typeof arkProducts[number];refreshIntervalSeconds?:number;enabled?:boolean;identity?:string;query?:QueryConfig;presentation?:Presentation}
+export const cliProvider=(id:ProviderId)=>id==='codex'||id==='antigravity'||id==='volcengine';
 export const supportsCli=(id:ProviderId)=>cliProvider(id)||id==='minimax';
 export function effectiveQuery(id:ProviderId,row:ChannelOptions):QueryConfig{return row.query ?? (cliProvider(id)?{kind:'cli',location:'local'}:{kind:'http',auth:'auto'});}
 export function validateChannels(accounts:Partial<Record<ProviderId,ChannelOptions[]>>,ctx:z.RefinementCtx){

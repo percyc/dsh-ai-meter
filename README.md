@@ -13,6 +13,7 @@ Unified AI provider usage, quota and balance monitor for DeepSeek Harness.
 | Provider | 已实现 | 凭据 / 前置条件 |
 | --- | --- | --- |
 | OpenCode Go | rolling / weekly / monthly 剩余比例、reset | `OPENCODE_GO_API_KEY`，或本机 OpenCode `opencode-go` 登录条目 |
+| 火山方舟 | Agent Plan / Coding Plan（个人、团队）的周期额度与重置时间 | 官方 `arkcli usage plan`，本机 / SSH，自有登录与可选 profile |
 | MiniMax | Token Plan 的 5h / weekly、boost；旧 Coding Plan 请求额度 | 官方 `mmx quota show`（本机 / SSH）或 `MINIMAX_API_KEY` HTTP；支持无限额度与套餐未包含状态 |
 | Codex | app-server 返回的各 limit bucket、周期、credits | `codex` 在服务端 PATH 中，且已通过 ChatGPT 登录 |
 | Antigravity | Gemini / Claude-GPT 的 5h、weekly、reset | 官方 `agy --print /usage`，使用 CLI 自有登录 |
@@ -269,6 +270,44 @@ accounts:
 
 不把周期额度硬编码成美元总额；当前接口解析只展示百分比。例如合成值 `weekly.percent = 57` 对应 **43% 剩余**。实现：[opencode-go.ts](src/providers/opencode-go.ts)。
 
+### 火山方舟（Volcengine ARK）
+
+Provider ID：`volcengine`。使用官方 arkcli，已用本机 **1.0.26** 核对真实 Coding Plan 输出。支持本机或 SSH 执行；添加渠道选择「火山方舟 → 使用官方 arkcli」。不会因为安装了 CLI 就自动加入显示。
+
+```sh
+npm i -g @volcengine/ark-cli
+arkcli auth login
+# 检查登录，再查询全部已订阅套餐：
+arkcli auth status --format json
+arkcli usage plan --format json
+# 固定 profile 和套餐（不会切换默认配置）：
+arkcli usage plan --format json --product coding-plan --profile my-profile
+```
+
+- CLI 认证由执行机器上的 arkcli 管理。插件每次采集先以同一 profile 运行 `auth status`，确认 `logged_in=true` 后才查询；不自动登录、不切换身份、不读取或复制 API Key。
+- 连接配置可填写 `arkProfile`（留空沿用 CLI 的当前配置），选择 `arkProduct`：`agent-plan` / `coding-plan` / `agent-plan-team` / `coding-plan-team`。留空自动发现所有已订阅套餐；指定套餐可省去订阅探测。团队套餐只查询当前身份绑定的席位，本版不提供任意 seat 查询。
+- profile 选择优先显式 `--profile`，随后是 CLI 环境/默认配置；区域、项目、身份由 CLI profile 决定。本机与 SSH 均可填写可执行文件路径、HOME；未填写路径时沿用统一自动查找机制。
+- 本机与远端运行环境均设置 `ARKCLI_NO_UPDATE_NOTIFIER=1`，防止 quota 查询触发 CLI 隐式升级。不传入任意 args、API Key 或 Base URL。
+- CLI 渠道默认缓存 5 分钟，支持按渠道调整，查询遵循按需更新、并发限制和失败退避。
+
+| 返回字段 | 解释与显示 |
+| --- | --- |
+| `items[].product` | 独立套餐池，构成指标 ID 的前缀 |
+| `items[].subscribed=false` | 未订阅，跳过；没有有效套餐时显示暂无支持额度 |
+| `periods[].label` | 周期按原样识别；`session` 显示「本周期」，不硬编码为 5h；weekly / monthly 分别展示 |
+| `periods[].percent` | **已用百分比**，剩余 = 100 − percent，不是剩余比例 |
+| `periods[].used` / `total` | Agent Plan 的绝对量，单位 **AFP**；有效总额 > 0 时保留计数；缺 percent 可由 used/total 推导 |
+| Coding Plan 缺 used / total | 仅显示剩余百分比，不虚构请求数、Token 总额或余额 |
+| 显式 total=0 | 不能证明无限或满额，显示未知；不伪造 100% |
+| `periods[].reset_at` | 带时区的 RFC3339，规范成 UTC ISO，再由页面按浏览器时区显示 |
+| `items[].error` | 保留该套餐的未知状态，其他成功套餐仍可显示；不把部分失败判为整体正常，不回显原始错误 |
+
+`viewer` 的身份摘要、seat ID、原始错误和 CLI 凭据不进入快照。`updated_at` 不充当插件采集时间，页面的 fetchedAt 仍是本次成功查询时间。多个套餐独立展示，不相加。
+
+这条查询是**套餐额度快照**，不是按量 API Token 统计、现金余额或账单。Coding Plan 不提供按模型套餐明细；不以 `usage stats` 冒充。Agent Plan 按模型明细、团队管理员席位总览、免费 Token 包余额均不在此适配器范围内。
+
+实现：[volcengine.ts](src/providers/volcengine.ts)。官方说明：[ARK CLI](https://console.volcengine.com/ark/region:cn-beijing/docs/82379/2536875?lang=zh)；字段与命令按已安装 CLI 的 help 和随附 usage plan 文档核对。
+
 ### MiniMax
 
 提供两种查询方式，现有 HTTP 渠道不会自动切换。新增渠道选择 MiniMax →「使用官方 mmx CLI」；修改已有渠道可在「账号与来源」切换。下一步选择 DSH 本机或 SSH 远端，保存并验证连接。
@@ -454,7 +493,7 @@ Claude and GPT models<TAB>Five Hour Limit Remaining<TAB>61%<TAB>2099-01-01T00:00
 | `getHealth(filter?)` | `aiMeter/getHealth` | 每账号采集 / 额度状态 |
 | `getAvailableProviders(filter?)` | `aiMeter/getAvailableProviders` | 通过额度检查的账号列表 |
 
-`filter` 为 Provider ID 数组：`opencode-go`、`minimax`、`codex`、`antigravity`、`kimi`、`deepseek`、`302ai`。省略查询全部，`[]` 查询空集合。Agent 工具参数示例：`{"providers":["opencode-go","minimax"]}`。
+`filter` 为 Provider ID 数组：`opencode-go`、`minimax`、`codex`、`antigravity`、`kimi`、`deepseek`、`302ai`、`volcengine`。省略查询全部，`[]` 查询空集合。Agent 工具参数示例：`{"providers":["opencode-go","minimax"]}`。
 
 核心可独立导入，不加载 DSH 服务：
 
@@ -473,7 +512,7 @@ const candidates = await meter.getAvailableProviders()
 meter.dispose()
 ```
 
-`QuotaMeter.kind` 支持 `window | requests | credits | balance | pool`，`unit` 独立保留。`remainingPercent` 可缺省；MiniMax boost 可超过 100%，UI 文字保留真实比例，条宽最多 100%。`fetchedAt` 是上次成功采集时间（无成功值时为检查时间），`checkedAt` 是最近一次尝试，`expiresAt` 用于判断陈旧性。结构定义见 [types.ts](src/core/types.ts)。
+`QuotaMeter.kind` 支持 `window | requests | credits | balance | pool`，`unit` 独立保留（包括火山 Agent Plan 的 `afp`）。`remainingPercent` 可缺省；MiniMax boost 可超过 100%，UI 文字保留真实比例，条宽最多 100%。`fetchedAt` 是上次成功采集时间（无成功值时为检查时间），`checkedAt` 是最近一次尝试，`expiresAt` 用于判断陈旧性。结构定义见 [types.ts](src/core/types.ts)。
 
 `healthy` 仅表示当前账号的已知 meter 通过额度检查，不是服务商 SLA，也不保证请求成功。未知、过期、查询失败、已到重置时间未重新取得数据、任一已知 meter 耗尽或低于阈值的账号均不作为路由候选。余额只有金额时不推导百分比；没有汇率换算、跨平台总和或任务预算预测。
 

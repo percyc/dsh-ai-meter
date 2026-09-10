@@ -4,8 +4,8 @@ import { Channels, type ChannelActions } from './channels.js';
 import { nextCheckDelay, dataAge } from './refresh.js';
 import { health } from '../core/normalize.js';
 
-export const names: Record<ProviderId,string> = {'opencode-go':'OpenCode Go', minimax:'MiniMax', codex:'Codex', antigravity:'Antigravity', kimi:'Kimi', deepseek:'DeepSeek', '302ai':'302.AI'};
-const setup: Record<ProviderId,string> = {'opencode-go':'OPENCODE_GO_API_KEY · 或 OpenCode Go 本机登录', minimax:'MINIMAX_API_KEY · 默认国际版 Token Plan', codex:'先安装 Codex CLI 并完成 codex login', antigravity:'安装官方 agy 并登录；使用 agy --print /usage 查询', kimi:'先完成 kimi login · 或 KIMI_CODE_ACCESS_TOKEN', deepseek:'DEEPSEEK_API_KEY', '302ai':'AI_302_API_KEY'};
+export const names: Record<ProviderId,string> = {'opencode-go':'OpenCode Go', minimax:'MiniMax', codex:'Codex', antigravity:'Antigravity', kimi:'Kimi', deepseek:'DeepSeek', '302ai':'302.AI',volcengine:'火山方舟'};
+const setup: Record<ProviderId,string> = {'opencode-go':'OPENCODE_GO_API_KEY · 或 OpenCode Go 本机登录', minimax:'MINIMAX_API_KEY · 默认国际版 Token Plan', codex:'先安装 Codex CLI 并完成 codex login', antigravity:'安装官方 agy 并登录；使用 agy --print /usage 查询', kimi:'先完成 kimi login · 或 KIMI_CODE_ACCESS_TOKEN', deepseek:'DEEPSEEK_API_KEY', '302ai':'AI_302_API_KEY',volcengine:'先在执行机器运行 arkcli auth login 完成登录'};
 export const states = {healthy:'正常', low:'额度偏低', exhausted:'额度耗尽', unknown:'额度未知', stale:'数据已过期', error:'查询失败', 'not-configured':'未配置', unsupported:'暂无可用额度'};
 const errors = {'not-configured':'未找到凭据', 'not-installed':'未找到本地 CLI', unauthorized:'凭据无效或登录已过期，请重新登录', 'rate-limited':'查询被限流，请稍后重试', timeout:'查询超时', network:'网络请求失败', 'invalid-response':'接口返回格式不受支持', upstream:'上游服务查询失败', 'command-failed':'本地 CLI 执行失败，请在终端检查登录状态', unsupported:'此账号未返回支持的额度数据'};
 const fmt = (n: number) => n.toLocaleString(undefined, {maximumFractionDigits:2});
@@ -19,7 +19,7 @@ function Meter({meter:m, now, threshold}: {meter:QuotaMeter; now:number; thresho
   return <div className="aim-meter">
     <div className="aim-row"><span>{m.name}</span><strong>{m.entitlement === 'unlimited' ? '无限' : m.entitlement === 'unsupported' ? '不在当前套餐中' : m.remainingPercent !== undefined ? `${fmt(m.remainingPercent)}% 剩余` : m.remaining !== undefined ? `${fmt(m.remaining)}${m.currency ? ` ${m.currency}` : ''} 剩余` : '未知'}</strong></div>
     {m.remainingPercent !== undefined && <div className="aim-track" role="progressbar" aria-label={`${m.name} 剩余额度`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(100, m.remainingPercent)} aria-valuetext={`${fmt(m.remainingPercent)}% remaining`}><div style={{width:`${Math.min(100, m.remainingPercent)}%`, background:m.remainingPercent < threshold ? 'var(--aim-warning)' : 'var(--aim-accent)'}} /></div>}
-    {!m.entitlement && <div className="aim-meta">{m.limit !== undefined ? `${m.used !== undefined ? `${fmt(m.used)} 已用 / ` : ''}${fmt(m.limit)} 总额 · ${m.unit === 'unknown' ? '上游额度单位' : m.unit} · ` : ''}{m.kind === 'credits' ? '套餐外额外用量，不代表订阅窗口额度' : m.kind === 'balance' ? `余额${m.currency ? ` · ${m.currency}` : ' · 币种未提供'}` : <span title={m.resetAt}>{resetText(m.resetAt, now)}</span>}{m.kind === 'pool' && ' · 共享池，不按模型累加'}</div>}
+    {!m.entitlement && <div className="aim-meta">{m.limit !== undefined ? `${m.used !== undefined ? `${fmt(m.used)} 已用 / ` : ''}${fmt(m.limit)} 总额 · ${m.unit === 'unknown' ? '上游额度单位' : m.unit==='afp'?'AFP':m.unit} · ` : ''}{m.kind === 'credits' ? '套餐外额外用量，不代表订阅窗口额度' : m.kind === 'balance' ? `余额${m.currency ? ` · ${m.currency}` : ' · 币种未提供'}` : <span title={m.resetAt}>{resetText(m.resetAt, now)}</span>}{m.kind === 'pool' && ' · 共享池，不按模型累加'}</div>}
   </div>;
 }
 function Card({snapshot:s, now, threshold}: {snapshot:QuotaSnapshot; now:number; threshold:number}) {

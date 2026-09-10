@@ -4,6 +4,7 @@ Reviewed on 2026-09-09. This project implements its own core and adapter modules
 
 | Source | Reviewed revision / interface | Used for |
 | --- | --- | --- |
+| [Volcengine ARK CLI](https://console.volcengine.com/ark/region:cn-beijing/docs/82379/2536875?lang=zh) | Local arkcli 1.0.26 help and bundled usage-plan reference, checked 2026-09-10 | Official auth status + usage plan, profile/product selection, used percent, AFP, RFC3339 reset; verified real Coding Plan output. Console page requires JS; protocol verified from installed CLI. |
 | [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) | `5dda764ed3aa172535a7967b06ff95d9cbfe536a` | Cordis service, client module loader, settings.section, Typert and package bundle conventions |
 | [dsh-ai-quota](https://github.com/Carrick-K7/dsh-ai-quota) | `1ae812666f1a09269d0e8ff9037130b626381eb2` | Community quota endpoint shapes and integration reference |
 | [agy-quota](https://github.com/tingyi365/agy-quota) | `d750cb28b53190fb102ef4cd6634e189e996e9ae` | Historical prototype reference only; its bridge and JSON parser have been removed in favor of the official AGY CLI |
