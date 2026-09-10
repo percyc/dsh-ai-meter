@@ -30,6 +30,7 @@
     "dist",
     "cordis.patch.yml",
     "README.md",
+    "README.en.md",
     "docs",
     "LICENSE",
     "NOTICE"

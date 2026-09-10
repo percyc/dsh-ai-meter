@@ -1,20 +1,24 @@
 # DSH AI Meter
 
+**简体中文** | [English](README.en.md)
+
 Unified AI provider usage, quota and balance monitor for DeepSeek Harness.
 
 为 DeepSeek Harness 提供统一 AI 用量中心：订阅周期额度、共享模型池、请求数、credits 和余额独立展示，不把所有平台压成一个 `usage_percent`。
 
-**状态：v0.1.0 开发预览。** 已实现七个平台的 adapter、DSH 服务/RPC、Agent 工具与 Settings 页面。自动测试使用合成响应；已在本机完整 DSH Web profile 验证注册、Settings 页面、RPC 查询和手动刷新，OpenCode Go/Codex 返回了真实采集状态，其余平台仍需逐账号配置与验证。未发布 npm。
+**状态：v0.1.0 开发预览，尚未发布 npm。** 已实现八个平台的 adapter、DSH 服务/RPC、Agent 工具及用量与渠道配置界面。自动测试使用合成响应；已在实际 DSH Web 中验证集成，并核对多个官方 CLI 的真实输出。每个渠道仍需在自己的执行机器上完成登录与连接校验；支持某个平台不代表所有套餐和接口格式均已覆盖。
 
 ![AI Usage 设置页，使用合成演示数据](docs/images/dashboard-demo.png)
 
-## 第一版能力
+截图为合成数据示意，可能落后于当前界面；不含真实账号额度。
+
+## 功能与支持平台
 
 | Provider | 已实现 | 凭据 / 前置条件 |
 | --- | --- | --- |
 | OpenCode Go | rolling / weekly / monthly 剩余比例、reset | `OPENCODE_GO_API_KEY`，或本机 OpenCode `opencode-go` 登录条目 |
 | 火山方舟 | Agent Plan / Coding Plan（个人、团队）的周期额度与重置时间 | 官方 `arkcli usage plan`，本机 / SSH，自有登录与可选 profile |
-| MiniMax | Token Plan 的 5h / weekly、boost；旧 Coding Plan 请求额度 | 官方 `mmx quota show`（本机 / SSH）或 `MINIMAX_API_KEY` HTTP；支持无限额度与套餐未包含状态 |
+| MiniMax | Token Plan 的当前周期 / weekly、boost；旧 Coding Plan 请求额度 | 官方 `mmx quota show`（本机 / SSH）或 `MINIMAX_API_KEY` HTTP；支持无限额度与套餐未包含状态 |
 | Codex | app-server 返回的各 limit bucket、周期、credits | `codex` 在服务端 PATH 中，且已通过 ChatGPT 登录 |
 | Antigravity | Gemini / Claude-GPT 的 5h、weekly、reset | 官方 `agy --print /usage`，使用 CLI 自有登录 |
 | Kimi | Coding 短周期与 weekly | 本机 Kimi Code 登录态，或 `KIMI_CODE_ACCESS_TOKEN` |
@@ -52,17 +56,17 @@ dsh plugin --profile web add /absolute/path/dsh-ai-meter
 
 仓库发布代码后可用 `dsh plugin --profile web add github:percyc/dsh-ai-meter#<commit>`。本项目提供 `prepare` 构建脚本；pnpm 如要求允许依赖构建，请按 DSH 输出在对应 profile 的 `pnpm-workspace.yaml` 添加准确的 `allowBuilds` 条目。安装预构建 `.tgz` 无需构建步骤。参见 [DSH 官方插件发布说明](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/user/develop/basic/publish.md)。
 
-## 当前机器的重载脚本
+## 可选：多个本地插件一起重载
 
-已配置 `reload-dsh` 支持多个本地插件，默认选择 `cangzhi,ai-meter`。使用 `reload-dsh --list` 查看，`reload-dsh --plugins cangzhi,ai-meter` 重载，`--enable/--disable` 增量选择，`--dry-run` 预览。配置在 `~/.config/dsh/reload.json`，详见 [注册与多插件重载](docs/RELOAD_DSH.md)。
+仓库提供 [reload-dsh.py](scripts/reload-dsh.py) 和 [配置模板](scripts/reload-dsh.example.json)，需按实际 DSH 路径与插件清单安装配置，并非安装插件后自动可用。配置完成后，用 `reload-dsh --list` 查看，`reload-dsh --plugins ai-meter` 重载，`--enable/--disable` 增量选择，`--dry-run` 预览。多个插件可用逗号分隔；脚本记住上次成功选择，没有必须一起加载的其他插件。详见 [注册与多插件重载](docs/RELOAD_DSH.md)。
 
 ## 配置
 
-默认七个平台全部展示。API 凭据先从 DSH credentials 服务解析，再回退到 DSH **服务进程**的环境变量。读取接口不返回已存 Key，浏览器也不直接请求 Provider。配置表单中的新 Key 仅通过已认证的 DSH RPC 写入服务端，不回显、不写入浏览器持久存储。
+主页只展示可用来源或已显式配置的渠道，不为缺少来源的平台保留空卡片。火山方舟必须主动添加渠道；其他平台兼容既有默认来源。API 凭据先从 DSH credentials 服务解析，再回退到 DSH **服务进程**的环境变量。读取接口不返回已存 Key，浏览器也不直接请求 Provider。配置表单中的新 Key 仅通过已认证的 DSH RPC 写入服务端，不回显、不写入浏览器持久存储。
 
-在 **AI Usage → 配置渠道** 中添加/移除账号、修改名称，MiniMax 可选择区域和套餐接口。在“连接配置”填写凭据后点击“保存并验证连接”，页面会按顺序保存渠道、保存新凭据并查询。页面显示当前凭据来源；新录入的密钥保存在 DSH 凭据服务的 `DSH_AI_METER_<hash>` 独立引用，不覆盖共享 Key 或 CLI 登录文件。账号配置存入 DSH settings 的 `dsh-ai-meter` 命名空间，保存后生效。移除账号不删除凭据。Codex/AGY/mmx 登录需在执行机器完成；页面可配置本地/SSH 位置、CLI 路径与 home，旧版 args 仍由服务端配置。暂不支持任意中转 Base URL。
+在 **AI Usage → 配置渠道** 中添加/移除账号、修改名称，MiniMax 可选择区域和套餐接口。在“连接配置”填写凭据后点击“保存并验证连接”，页面会按顺序保存渠道、保存新凭据并查询。页面显示当前凭据来源；新录入的密钥保存在 DSH 凭据服务的 `DSH_AI_METER_<hash>` 独立引用，不覆盖共享 Key 或 CLI 登录文件。账号配置存入 DSH settings 的 `dsh-ai-meter` 命名空间，保存后生效。移除账号不删除凭据。Codex/AGY/mmx/arkcli 登录需在执行机器完成；页面可配置本地/SSH 位置、CLI 路径与 home。暂不支持任意中转 Base URL。
 
-无需把 Key 写进仓库或配置 YAML。设置上表环境变量，或在 DSH 凭据管理中存入同名凭据后，刷新页面即可。SSH / 容器 / 多机器场景读取的是运行 DSH 的机器，第一版不会远程扫描其他电脑。
+无需把 Key 写进仓库或配置 YAML。设置上表环境变量，或在 DSH 凭据管理中存入同名凭据后，通过本机来源发现添加并校验渠道。本地来源读取运行 DSH 的机器；远端 CLI 必须显式配置 SSH 渠道，不会自动扫描其他电脑。
 
 插件 row id 为 `ai-meter`。在 DSH 对该 row 的 `config` 中设置以下字段（此处为配置对象，不是整份 patch 文件）：
 
@@ -86,17 +90,24 @@ accounts:
       planType: token    # token（默认）或 coding（旧版）
   codex:
     - id: personal
-      command: codex
-      # home: /absolute/path/.codex  # CODEX_HOME，不是用户 HOME
+      query: {kind: cli, location: local}
+      # query.home 为 CODEX_HOME，不是用户 HOME
   antigravity:
     - id: local
-      command: agy
+      query: {kind: cli, location: local}
   kimi:
     - id: local
   deepseek:
     - id: personal
       credentialEnv: DEEPSEEK_API_KEY
-  302ai: []              # [] 禁用该平台；省略则使用默认账号
+  volcengine:
+    - id: coding
+      name: 火山 Coding Plan
+      query: {kind: cli, location: local}
+      arkProfile: my-profile   # 可选；留空使用 CLI 当前 profile
+      arkProduct: coding-plan # 可选；留空自动发现订阅
+      presentation: {visible: false}
+  302ai: []              # [] 禁用该平台；省略则兼容默认账号（火山除外）
 ```
 
 `id` 在单个平台内唯一。账号配置一旦指定便替换该平台默认账号列表。
@@ -105,11 +116,17 @@ accounts:
 - OpenCode：默认读取 `$XDG_DATA_HOME/opencode/auth.json` 或 `~/.local/share/opencode/auth.json` 的 `opencode-go` API 条目，不混用普通 OpenCode Key。
 - Kimi：读取 `~/.kimi-code/credentials/kimi-code.json`，兼容 `~/.kimi/credentials/kimi-code.json`。v0.1 不修改登录文件、不轮换 token；过期后运行 `kimi login`。
 - `home`：Codex 表示独立的 `CODEX_HOME`；OpenCode / Kimi 表示用于本机文件查找的用户目录；AGY 表示传给 CLI 的 HOME / USERPROFILE，但不能替代 OS keyring 用户切换。
-- CLI 不在 PATH 时设置 `command` 为绝对路径。AGY 必须指向官方 `agy`，插件使用固定参数 `--print /usage`，不接受额外 args。不经过 shell。
-- AGY 使用外部 CLI 自身的登录和 OAuth 刷新机制。OS keyring 多账号切换、跨机器采集尚未实现。
+- CLI 路径优先使用 `query.executable`，登录目录优先使用 `query.home`。Codex 兼容旧 `command/args/home`；AGY、mmx、arkcli 使用固定额度命令，不支持额外 args。SSH 路径可自动查找，详见下文。
+- AGY/mmx/arkcli 的 home 是执行机器的 HOME / USERPROFILE，Codex 是 CODEX_HOME；这些设置不能替代系统用户或 OS keyring 切换。CLI 自己管理登录和认证刷新，插件不复制远端凭据。
 - 收起时无采集轮询；悬停按需查缓存，详情页可见时按渠道到期时间检查，配置页和后台标签页暂停。详见下节刷新策略。
 
 ![悬停总体预览，使用合成演示数据](docs/images/preview-demo.png)
+
+### 预览与详情窗口
+
+悬停预览合并平台与渠道标题，正常状态用圆点表示，异常保留文字。每项指标以名称、细进度条、剩余值、简短重置日期紧凑排列；当日显示时间，其他日期显示月/日，鼠标悬停或键盘聚焦可查看完整日期与倒计时。窄屏日期换行；过期数据使用灰色条。额外 credits 与未包含指标默认隐藏，显式选择可展示。各渠道显示最近成功采集时间，不新增后台定时采集。
+
+详情/配置使用原生模态窗口，桌面最大宽度 1440px、高度约 92% 视口，窄屏保留边距。窗口打开时背景控件不可交互，避免宿主对话区的调节条覆盖窗口；支持 Escape、关闭按钮和点击遮罩关闭，关闭后恢复焦点与页面滚动。
 
 ## 渠道、查询来源与预览映射
 
@@ -128,7 +145,7 @@ accounts:
 | 显示名称 | 区分本地、不同 SSH 主机、不同账号；渠道 ID 保持不变 |
 | 账号归属标记 | 可给同一账号的不同来源填写相同标记；仅说明关联，不自动合并、去重或故障切换 |
 | 渠道排序 | 小值在预览中靠前 |
-| 指标范围 | 全部指标（包含以后新增），或仅选择的指标（不自动加入新指标） |
+| 指标范围 | 默认指标（排除额外 credits 和套餐未包含指标，包含以后新增的普通指标），或仅选择的指标（不自动加入新指标） |
 | 指标别名和顺序 | 只改变预览中的名称与顺序，详情保留原始名称和全部指标 |
 
 配置入口先显示**已有渠道列表**，可以直接校验、编辑、启用、停用或删除。校验仅对该账号发起一次跳过缓存的查询，在当前行显示结果和时间，不启动轮询；停用渠道需先启用才能校验。删除在当前行确认，移除渠道及展示配置，保留凭据；失败时列表保留原渠道。编辑默认打开连接配置，可自由切换账号设置、查询结果和预览内容；“新增渠道”先选择平台，再进入配置流程。新增配置分为四步：**选择渠道 → 连接配置 → 查询结果 → 预览内容**。第二步点击“保存并验证连接”，同时完成渠道保存、可选凭据保存与单渠道重新查询（跳过缓存）；第三步明确显示成功或失败原因；第四步直接勾选指标并“保存显示设置”。高级路径、命令和字段说明默认折叠。例如只勾选 OpenCode 的 `rolling`、`monthly`，Weekly 将不会出现在悬停预览，详情仍保留 Weekly。
@@ -158,20 +175,21 @@ curl --request GET --silent --show-error --fail-with-body --max-time 15 \
 
 | 平台 | 当前可用模板 | 认证位置 |
 | --- | --- | --- |
+| 火山方舟 | 官方 `arkcli usage plan`（本机 / SSH） | CLI 自有登录及可选 profile / 套餐 |
 | Codex | 本地 CLI、SSH CLI | 执行机器上 Codex 自有登录 |
 | Antigravity | 本地 CLI、SSH CLI | 官方 agy 自有登录 |
 | MiniMax | 官方 `mmx quota show`（本机 / SSH）或 HTTP | CLI 自有登录、区域与套餐配置；HTTP 使用 DSH 凭据 |
 | OpenCode Go、Kimi、DeepSeek、302.AI | HTTP 接口，复用已有凭据或独立 Key / Access Token | DSH 服务端凭据服务；OpenCode / Kimi 可复用本地登录文件 |
 
-**Cookie 查询尚未验证，不提供可配置选项。** OpenCode Go 当前只有 HTTP 查询（使用 Key 或兼容已有本机登录凭据），没有 CLI 订阅额度查询方式；`opencode stats` 的使用统计不代表 Go 订阅剩余额度。 不把 Bearer 接口直接改成 Cookie 鉴权，不承诺每个平台都支持全部模板。HTTP 查询目前在 DSH 本机执行；SSH 目前只运行已支持的两个 CLI 协议，不通过 SSH 转发任意 HTTP 请求，也不提供自由 shell 脚本配置。
+**Cookie 查询尚未验证，不提供可配置选项。** OpenCode Go 当前只有 HTTP 查询（使用 Key 或兼容已有本机登录凭据），没有 CLI 订阅额度查询方式；`opencode stats` 的使用统计不代表 Go 订阅剩余额度。 不把 Bearer 接口直接改成 Cookie 鉴权，不承诺每个平台都支持全部模板。HTTP 查询目前在 DSH 本机执行；SSH 目前只运行 Codex、AGY、mmx、arkcli 四种已支持的 CLI 协议，不通过 SSH 转发任意 HTTP 请求，也不提供自由 shell 脚本配置。
 
 新增 HTTP 渠道默认采用“本渠道 API Key / Access Token”，没有保存该渠道的凭据时显示未配置，不自动借用同平台默认 Key。明确选择“复用已有凭据”或从本地发现中添加，才会使用原有凭据解析逻辑。保存新凭据后自动选用独立 Key 模式。
 
 ### SSH CLI
 
-在 Codex / Antigravity 渠道选择“SSH 远端”，填写 DSH 服务端可用的 SSH 别名或 `user@host`，例如 `workstation`。可选填写远端 CLI 可执行文件和 home；Codex 的 home 是 `CODEX_HOME`，AGY 的 home 是远端 `HOME`。
+在 Codex / Antigravity / MiniMax CLI / 火山方舟渠道选择“SSH 远端”，填写 DSH 服务端可用的 SSH 别名或 `user@host`，例如 `workstation`。可选填写远端 CLI 可执行文件和 home；Codex 的 home 是 `CODEX_HOME`，AGY / mmx / arkcli 的 home 是远端 `HOME`。
 
-认证复用 DSH 进程可访问的 SSH 配置、密钥文件或 agent；不在网页保存 SSH 密码或私钥。需事先完成主机密钥信任和远端 CLI 登录。远端命令通过非交互 POSIX shell 执行，不保证继承交互 shell 的 PATH；找不到 CLI 时请配置其绝对路径。可在 DSH 服务端自行验证：
+认证复用 DSH 进程可访问的 SSH 配置、密钥文件或 agent；不在网页保存 SSH 密码或私钥。需事先完成主机密钥信任和远端 CLI 登录。远端命令通过非交互 POSIX shell 执行；可执行文件留空时会自动查找 PATH 和常见安装位置，失败后可填写绝对路径。可在 DSH 服务端自行验证：
 
 ```sh
 ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes workstation 'command -v codex'
@@ -182,11 +200,17 @@ ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes workstation 'command -v agy
 
 Codex 通过 SSH 的 stdin/stdout 完成 `initialize → initialized → account/rateLimits/read`，AGY 读取 官方 `agy --print /usage` 的文本输出。只返回查询结果，插件不读取或复制远端凭据。CLI 内部可能按自身逻辑刷新认证。SSH 失败、命令不存在或登录过期不会退回查询本机账号。
 
-SSH 的离线测试覆盖非交互参数、命令转义、Codex 逐行协议和 AGY JSON 返回；这不等于验证了某台实际远端机器。真实连通性、CLI 路径、登录和返回格式需在目标渠道首次查询时确认。
+SSH 的离线测试覆盖非交互参数、命令转义、Codex 逐行协议、AGY 制表符文本及 mmx/arkcli JSON 返回；这不等于验证了某台实际远端机器。真实连通性、CLI 路径、登录和返回格式需在目标渠道首次查询时确认。
+
+### SSH 自动查找 CLI
+
+SSH 渠道的“CLI 可执行文件”留空时，先使用远端非交互 PATH；找不到命令时，启动远端登录 Shell，仅取得其 PATH，然后执行 CLI。如果仍找不到，再检查 `~/.local/bin`、`~/bin`、`~/.npm-global/bin`、`/home/linuxbrew/.linuxbrew/bin` 和 `/opt/homebrew/bin`。无需为查路径启动交互式 Shell。这覆盖通过登录配置加载的 Homebrew、nvm 等安装位置，同时让 Node 等解释器可被找到。登录脚本的输出不会混入额度协议；探测不读取 stdin、不主动启动登录认证。
+
+手动填写路径时严格使用该路径，不尝试替换；自动查找失败时仍可填写绝对路径。远端登录配置需要能非交互运行，所有探测都包含在单次查询的超时内。不会写入远端 shell 配置。
 
 ### 配置示例与指标 ID
 
-以下属于原有 `accounts` 下的账号字段，已有 `credentialEnv`、command/args/home 配置继续兼容。显式 `query.executable` / `query.home` 优先于旧字段。
+以下属于原有 `accounts` 下的账号字段，`credentialEnv` 仍可使用；旧 CLI 字段的兼容范围见上文。显式 `query.executable` / `query.home` 优先于旧字段。
 
 ```yaml
 accounts:
@@ -221,7 +245,7 @@ accounts:
 
 省略 `presentation` 时保留既有预览行为。省略 `meterIds` 表示默认指标（排除额外 credits 和套餐未包含指标）；显式勾选仍可展示这些指标，`meterIds: []` 表示不展示任何指标，也不会由悬停触发该渠道查询。改变展示选项和账号归属标记不会清空服务端采集缓存；改变查询来源、名称或启用状态会重新建立采集配置。
 
-指标 ID 优先基于上游语义身份：OpenCode 窗口名、Codex limit ID + primary/secondary、MiniMax model_name + 周期、DeepSeek 币种、Kimi 窗口单位/时长、AGY 模型/额度类型或池 scope。上游缺失身份时仍有兜底 ID；上游修改身份后旧选择会显示缺失，需要人工重新选择，不能保证任意协议变化下 ID 不变。
+指标 ID 优先基于上游语义身份：OpenCode 窗口名、Codex limit ID + primary/secondary、MiniMax model_name + 周期、DeepSeek 币种、Kimi 窗口单位/时长、AGY 模型/额度类型或池 scope、火山方舟 product + 周期。上游缺失身份时仍有兜底 ID；上游修改身份后旧选择会显示缺失，需要人工重新选择，不能保证任意协议变化下 ID 不变。
 
 ## 刷新策略与资源开销
 
@@ -246,7 +270,7 @@ accounts:
 
 1. 独立 Key 模式且未配置引用时直接报告未配置。其他情况下，账号指定 `credentialEnv` 时以该引用为准，否则使用平台默认引用名。
 2. 先调用 `ctx.credentials.resolve(ref)`。当前 DSH 本地凭据服务优先级是：继承的进程环境变量 → DSH `.credentials.yaml` → 启动目录 `.env` → DSH home `.env`。插件再以 `process.env[ref]` 兜底。具体来源由配置页通过 `describe` 展示。
-3. OpenCode Go / Kimi 仅在**未显式指定引用且引用未取到值**时读取下述本地登录文件。Codex / AGY 则由各自 CLI 管理认证。
+3. OpenCode Go / Kimi 仅在**未显式指定引用且引用未取到值**时读取下述本地登录文件。Codex / AGY / mmx / arkcli 则由各自 CLI 管理认证。
 4. 五个直接 HTTP adapter 均发送 `GET`，请求头是 `Authorization: Bearer <服务端解析的凭据>` 和 `Accept: application/json`，无请求体。固定域名，不跟随重定向。每个账号默认 15 秒 deadline，HTTP 响应和 CLI 输出限制为 2 MiB；AGY 命令自身另有 30 秒上限，实际取较早的超时。
 5. 数字及有限的数字字符串可解析；缺失/非法值保留未知，不替换为 0 或 100%。时间支持日期字符串与 Unix 时间戳：数值小于 `1e12` 按秒，否则按毫秒，统一输出 ISO 时间。
 6. 已有 `remainingPercent` 优先保留；否则仅当有剩余值和正总额时计算 `remaining / limit × 100`，派生百分比限制到 0–100。只有已用和总额时先计算 `max(0, limit - used)`。不同币种、账号、周期与池不相加；没有总额的余额不计算百分比。
@@ -514,7 +538,7 @@ meter.dispose()
 
 `QuotaMeter.kind` 支持 `window | requests | credits | balance | pool`，`unit` 独立保留（包括火山 Agent Plan 的 `afp`）。`remainingPercent` 可缺省；MiniMax boost 可超过 100%，UI 文字保留真实比例，条宽最多 100%。`fetchedAt` 是上次成功采集时间（无成功值时为检查时间），`checkedAt` 是最近一次尝试，`expiresAt` 用于判断陈旧性。结构定义见 [types.ts](src/core/types.ts)。
 
-`healthy` 仅表示当前账号的已知 meter 通过额度检查，不是服务商 SLA，也不保证请求成功。未知、过期、查询失败、已到重置时间未重新取得数据、任一已知 meter 耗尽或低于阈值的账号均不作为路由候选。余额只有金额时不推导百分比；没有汇率换算、跨平台总和或任务预算预测。
+`healthy` 仅表示当前账号的已知 meter 通过额度检查，不是服务商 SLA，也不保证请求成功。未知、过期、查询失败、已到重置时间未重新取得数据、任一参与状态判断的 meter 耗尽或低于阈值的账号均不作为路由候选。余额只有金额时不推导百分比；没有汇率换算、跨平台总和或任务预算预测。
 
 ## 测试与后续规划
 
@@ -524,20 +548,10 @@ npx playwright install chromium
 npm run test:browser                  # 已构建客户端的加载、交互、响应式检查
 ```
 
-浏览器测试中的 `DEMO · Synthetic fixture` 数据不会打入插件。宿主测试使用真实 Cordis + 测试 tools 服务；浏览器自动测试使用 DSH module-loader/RPC 接缝的测试实现；另外已通过本机真实 DSH Web 的七卡片查询与刷新检查。GitHub Actions 同时运行两组测试与打包检查。
+浏览器测试中的 `DEMO · Synthetic fixture` 数据不会打入插件。宿主测试使用真实 Cordis + 测试 tools 服务；浏览器自动测试使用 DSH module-loader/RPC 接缝的测试实现；另外已通过实际 DSH Web 集成的查询与刷新检查。合成测试通过不等于每个远端账号都已验证。GitHub Actions 同时运行两组测试与打包检查。
 
 第一版不包含 MiniMax/Kimi 的独立按量 API 余额、原生 AGY 多账号 OAuth、Cookie 接口、自动账号去重/来源切换、历史图表或自动模型路由。实施计划和后续里程碑见 [PLAN.md](docs/PLAN.md)，架构见 [ARCHITECTURE.md](docs/ARCHITECTURE.md)，协议来源见 [SOURCES.md](docs/SOURCES.md)。
 
-MIT © 2026 percyc
+## 许可证
 
-### 预览与详情窗口
-
-悬停预览合并平台与渠道标题，正常状态用圆点表示，异常保留文字。每项指标以名称、细进度条、剩余值、简短重置日期紧凑排列；当日显示时间，其他日期显示月/日，鼠标悬停或键盘聚焦可查看完整日期与倒计时。窄屏日期换行；过期数据使用灰色条。额外 credits 与未包含指标默认隐藏，显式选择可展示。各渠道显示最近成功采集时间，不新增后台定时采集。
-
-详情/配置使用原生模态窗口，桌面最大宽度 1440px、高度约 92% 视口，窄屏保留边距。窗口打开时背景控件不可交互，避免宿主对话区的调节条覆盖窗口；支持 Escape、关闭按钮和点击遮罩关闭，关闭后恢复焦点与页面滚动。
-
-### SSH 自动查找 CLI
-
-SSH 渠道的“CLI 可执行文件”留空时，先使用远端非交互 PATH；找不到命令时，启动远端登录 Shell，仅取得其 PATH，然后执行 CLI。如果仍找不到，再检查 `~/.local/bin`、`~/bin`、`~/.npm-global/bin`、`/home/linuxbrew/.linuxbrew/bin` 和 `/opt/homebrew/bin`。无需为查路径启动交互式 Shell。这覆盖通过登录配置加载的 Homebrew、nvm 等安装位置，同时让 Node 等解释器可被找到。登录脚本的输出不会混入额度协议；探测不读取 stdin、不主动启动登录认证。
-
-手动填写路径时严格使用该路径，不尝试替换；自动查找失败时仍可填写绝对路径。远端登录配置需要能非交互运行，所有探测都包含在单次查询的超时内。不会写入远端 shell 配置。
+[MIT](LICENSE) © 2026 percyc。第三方参考与归属见 [NOTICE](NOTICE)。
