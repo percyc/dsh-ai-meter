@@ -19,6 +19,15 @@ class ReloadTests(unittest.TestCase):
     def select(self, *args):
         return r.select_plugins(self.config, r.parser().parse_args(args))
 
+    def test_published_template_uses_only_example_environment(self):
+        config = json.loads((Path(__file__).parents[1]/'scripts/reload-dsh.example.json').read_text())
+        self.assertEqual(config['server']['trustedHost'], 'dsh.example.com')
+        self.assertEqual(config['dshSource'], '/path/to/deepseek-harness')
+        for plugin in config['plugins'].values():
+            if plugin.get('source', 'local') == 'local':
+                self.assertTrue(plugin['path'].startswith('/path/to/'))
+        self.assertNotIn('token', config['server'])
+
     def test_selection_modes_and_package_alias(self):
         self.assertEqual(self.select(), ['cangzhi', 'ai-meter'])
         self.assertEqual(self.select('--plugins', 'dsh-ai-meter'), ['ai-meter'])

@@ -55,7 +55,7 @@ def parser():
   reload-dsh restart --plugins cangzhi,ai-meter --save-default
   reload-dsh reload                        构建、测试、重新注册本地插件并重启
 
-默认组合由配置 enabled 决定，本机为 cangzhi、ai-meter、better-sidebar。
+默认组合由本机配置 enabled 决定，仓库模板仅提供示例。
 --plugins 是精确选择，--without 从默认组合排除；选择默认只影响本次。
 --save-default 成功后才保存组合。--no-plugins 关闭清单内插件，保留 DSH
 基础 bundle 和清单外插件。npm 插件只加载已有安装，reload 不自动升级它。

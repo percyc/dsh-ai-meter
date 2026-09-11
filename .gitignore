@@ -18,4 +18,5 @@ oauth_creds.json
 *.pem
 *.key
 reload.local.json
+reload.json
 *.log

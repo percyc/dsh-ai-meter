@@ -13,7 +13,7 @@ reload-dsh logs        # 查看最近 80 行日志，隐藏 token；日志可能
 reload-dsh plugins     # 查看全部 profile 插件、来源及默认选择
 ```
 
-本机默认启用 `cangzhi`、`ai-meter`、`better-sidebar`。前两项为本地源码插件，better-sidebar 为已安装的 npm 插件，当前固定在 0.19.0。启动和重载不会自动下载或升级 npm 插件；缺少安装时会报错。插件列表展示 profile 配置状态，不声称所有客户端组件已经激活。
+仓库模板以 `cangzhi`、`ai-meter`、`better-sidebar` 为例；默认启用项以本机配置为准。前两项为本地源码插件，better-sidebar 为 npm 插件，版本以实际安装为准。启动和重载不会自动下载或升级 npm 插件；缺少安装时会报错。插件列表展示 profile 配置状态，不声称所有客户端组件已经激活。
 
 `start` 遇到正在运行的受管服务只报告状态，不修改选择或默认组合。要切换组合请用 `restart`。端口被其他进程占用时不会擅自杀进程。
 
@@ -65,3 +65,9 @@ python3 -m unittest discover -s tests -p 'test_reload_dsh.py' -v
 ```
 
 验证覆盖选择规则、只读命令、进程身份、旧日志拒绝、token 隐藏、已运行 start 无操作、restart 不安装、临时与默认组合、npm 不重建及失败恢复。
+
+## 本地环境与公开仓库
+
+实际源码目录、个人域名和插件选择保存在仓库外的 `~/.config/dsh/reload.json`。提交示例时只使用 `/path/to/...` 和 `dsh.example.com`，不要复制实际配置、登录链接或日志。仓库忽略 `reload.json`、`reload.local.json` 和日志文件；已跟踪的文件仍需人工检查。
+
+Git 分支提交、远端跟踪引用和工具本地检查点是不同范围。普通推送不会自动上传 `refs/codex/` 检查点，但镜像推送或复制整个 `.git` 目录可能包含它们；检查公开内容时应明确扫描范围。
