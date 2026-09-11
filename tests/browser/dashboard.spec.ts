@@ -390,3 +390,45 @@ test('Volcengine official CLI channel supports profile, product, SSH and quota s
   await expect(page.getByRole('textbox',{name:'ARK profile',exact:true})).toHaveValue('work-profile');
   await expect(page.getByRole('combobox',{name:'ARK 套餐类型',exact:true})).toHaveValue('coding-plan');
 });
+
+for(const placement of ['above','below'] as const) test(`preview stays still during delayed refresh polling ${placement} the chip`,async({page})=>{
+  await page.clock.install();
+  await page.setViewportSize({width:1180,height:1200});
+  await page.goto('/?chip=1&pending=1');
+  const chip=page.getByRole('button',{name:'AI 用量概览',exact:true});
+  await expect(chip).toBeVisible();
+  await page.evaluate((placement)=>{
+    window.testKeepMeters=true;
+    window.testDelay=250;
+    const root=document.querySelector<HTMLElement>('.aim-chip')!;
+    root.style.position='fixed';root.style.left='24px';
+    if(placement==='above')root.style.bottom='24px';else root.style.top='24px';
+  },placement);
+  await chip.hover();
+  await page.clock.fastForward(300);
+  const preview=page.getByRole('region',{name:'用量总体预览'});
+  await expect(preview.locator('.aim-preview-row')).toHaveCount(6);
+  await expect(preview.getByRole('status')).toHaveText('正在更新…');
+  const geometry=()=>preview.evaluate(el=>{
+    const rect=(node:Element)=>{const r=node.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};};
+    return {panel:rect(el),rows:[...el.querySelectorAll('.aim-preview-row')].map(rect),actions:rect(el.querySelector('.aim-preview-actions')!),scrollTop:el.scrollTop};
+  });
+  const baseline=await geometry();
+  for(let i=0;i<3;i++){
+    const calls=await page.evaluate(()=>window.queryCount);
+    await page.clock.fastForward(1000);
+    await expect.poll(()=>page.evaluate(()=>window.queryCount)).toBe(calls+1);
+    // Measure while the delayed RPC is in flight, then after its response.
+    expect(await geometry()).toEqual(baseline);
+    await page.clock.fastForward(300);
+    expect(await geometry()).toEqual(baseline);
+    await expect(preview.getByRole('status')).toHaveText('正在更新…');
+  }
+  await page.evaluate(()=>{window.testPending=false;});
+  await page.clock.fastForward(1000);
+  expect(await geometry()).toEqual(baseline);
+  await page.clock.fastForward(300);
+  await expect(preview.getByRole('status')).toHaveText('剩余额度');
+  expect(await geometry()).toEqual(baseline);
+  expect(await page.evaluate(()=>window.collectCount)).toBe(1);
+});

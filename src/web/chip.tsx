@@ -80,15 +80,15 @@ export function QuotaChip(props:DashboardProps) {
     const previous=document.body.style.overflow;document.body.style.overflow='hidden';
     return()=>{document.body.style.overflow=previous;};
   },[open]);
-  const checked=data?.snapshots.map(s=>Date.parse(s.checkedAt)).filter(Number.isFinite).sort((a,b)=>b-a)[0];
+  // Keep progress in the existing title row: polling must not insert/remove layout blocks.
+  const updating=busy || data?.snapshots.some(s=>s.pending);
+  const previewStatus=error?(data?'查询失败 · 保留上次结果':'查询失败'):updating?(data?'正在更新…':'首次查询中…'):'剩余额度';
   return <div className="aim-chip" ref={root} onMouseEnter={show} onMouseLeave={hide} onBlur={e=>{if(!e.currentTarget.contains(e.relatedTarget as Node))hide();}}>
     <button ref={button} type="button" aria-haspopup="dialog" aria-expanded={open || preview} aria-controls={preview?previewId:undefined} aria-label="AI 用量概览" onFocus={show} onClick={()=>launch('usage')}>◔ 用量</button>
     {preview && !open && <div id={previewId} className="aim-preview" style={position} role="region" aria-label="用量总体预览" onMouseEnter={clearClose}>
-      <div className="aim-preview-title"><strong>AI 用量</strong><span>剩余额度</span></div>
-      {busy && <p role="status">{data?'正在检查更新…':'首次查询中…'}</p>}
-      {error && <p role="status">查询失败{data?' · 保留上次结果':''}</p>}
+      <div className="aim-preview-title"><strong>AI 用量</strong><span role="status" title={previewStatus}>{previewStatus}</span></div>
       {data?.snapshots.filter(s=>s.status!=='not-configured').map(s=><PreviewCard key={`${s.provider}:${s.account.id}`} snapshot={s} now={now} threshold={data.lowQuotaPercent}/>)}
-      {!busy && data && !data.snapshots.some(s=>s.status!=='not-configured') && <p>尚未选择预览渠道或指标，请到配置渠道勾选</p>}
+      {data && !data.snapshots.some(s=>s.status!=='not-configured') && <p>尚未选择预览渠道或指标，请到配置渠道勾选</p>}
       <p className="aim-preview-age">按需查询 · 时间为各渠道最近成功采集时间</p>
       <div className="aim-preview-actions"><button type="button" onClick={()=>launch('usage')}>查看详情</button>{props.channels && <button type="button" onClick={()=>launch('channels')}>配置渠道</button>}</div>
     </div>}
