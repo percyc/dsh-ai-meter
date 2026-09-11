@@ -35,6 +35,8 @@ Screenshots are illustrative, may lag behind the current UI, and contain no real
 
 Requires Node.js 22+, npm, and an installed DSH environment with pnpm.
 
+The client explicitly injects `dsh-client-ui-renderer` for DSH 0.1.5 plugin loading, without depending on the removed `dsh-client-runtime` package.
+
 ```sh
 npm ci
 npm run check
@@ -68,6 +70,8 @@ reload-dsh --disable another-plugin
 ```
 
 Use comma-separated IDs to select multiple plugins. The helper remembers the last successful selection, rebuilds/registers selected plugins, and can restart the configured DSH process. Other plugins are optional. See [registration, reload and recovery details (Chinese)](docs/RELOAD_DSH.md).
+
+For daily use, run `reload-dsh start`, `reload-dsh restart`, or `reload-dsh login`; these do not build plugins. Chinese help is available with `reload-dsh --help`. The plugin catalog supports both local development plugins and installed npm plugins such as better-sidebar.
 
 ## Channels and display settings
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build selected local DSH plugins, register them, and restart an owned Web process."""
+"""管理 DSH 日常启动、只读查询与本地插件开发重载。"""
 import argparse
 import fcntl
 import json
@@ -42,21 +42,46 @@ def redact(text):
 
 
 def parser():
-    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog='Examples:\n  reload-dsh --list\n  reload-dsh --plugins cangzhi,ai-meter\n  reload-dsh --disable ai-meter\n  reload-dsh --enable ai-meter --dry-run\n\nSuccessful selections are saved. Unmanaged profile plugins are preserved.')
-    p.add_argument('--config', default=os.environ.get('RELOAD_DSH_CONFIG', str(Path(os.environ.get('XDG_CONFIG_HOME', str(Path.home()/'.config')))/'dsh/reload.json')))
+    p = argparse.ArgumentParser(description='DSH 启动、查看与插件开发重载工具',
+        formatter_class=argparse.RawDescriptionHelpFormatter, add_help=False,
+        epilog="""常用示例：
+  reload-dsh start                         使用保存的默认组合启动，不编译、不安装
+  reload-dsh login                         查看当前登录链接，不重启
+  reload-dsh status                        查看进程、端口与地址，不显示 token
+  reload-dsh plugins                       查看全部 profile 插件及默认选择
+  reload-dsh logs                          查看最近日志，自动隐藏 token
+  reload-dsh restart --without ai-meter    本次重启排除用量插件
+  reload-dsh start --plugins better-sidebar
+  reload-dsh restart --plugins cangzhi,ai-meter --save-default
+  reload-dsh reload                        构建、测试、重新注册本地插件并重启
+
+默认组合由配置 enabled 决定，本机为 cangzhi、ai-meter、better-sidebar。
+--plugins 是精确选择，--without 从默认组合排除；选择默认只影响本次。
+--save-default 成功后才保存组合。--no-plugins 关闭清单内插件，保留 DSH
+基础 bundle 和清单外插件。npm 插件只加载已有安装，reload 不自动升级它。
+start 遇到正在运行的服务只报告状态；切换组合请使用 restart。
+兼容旧用法：不写子命令仍执行完整 reload，并保存选择。
+注意：--show-login 是重载后显示链接；只查看当前链接请用 login。""")
+    p._positionals.title = '子命令'
+    p._optionals.title = '选项'
+    p.add_argument('-h', '--help', action='help', help='显示中文帮助并退出')
+    p.add_argument('command', nargs='?', choices=['start', 'restart', 'reload', 'status', 'login', 'logs', 'plugins'],
+                   help='start 启动；restart 仅重启；reload 开发重载；其余命令只读')
+    p.add_argument('--config', default=os.environ.get('RELOAD_DSH_CONFIG', str(Path(os.environ.get('XDG_CONFIG_HOME', str(Path.home()/'.config')))/'dsh/reload.json')), help='指定配置文件')
     group = p.add_mutually_exclusive_group()
-    group.add_argument('--plugins', help='Exact comma-separated managed plugin IDs to load')
-    group.add_argument('--all', action='store_true', help='Load every configured local plugin')
-    group.add_argument('--none', action='store_true', help='Disable all managed plugins; keep other profile bundles')
-    p.add_argument('--enable', action='append', default=[], help='Enable an ID (repeatable or comma-separated)')
-    p.add_argument('--disable', action='append', default=[], help='Disable an ID (repeatable or comma-separated)')
-    p.add_argument('--list', action='store_true', help='Show configured selection and registered bundles')
-    p.add_argument('--dry-run', action='store_true', help='Print the plan without build, install, config writes or restart')
-    p.add_argument('--skip-tests', action='store_true', help='Build normally but skip plugin tests')
-    p.add_argument('--no-build', action='store_true', help='Reuse existing build outputs; tests still run unless skipped')
-    p.add_argument('--no-restart', action='store_true', help='Register selection only; do not stop/start DSH')
-    p.add_argument('--show-login', action='store_true', help='Print the local one-time login URL after startup')
+    group.add_argument('--plugins', help='本次精确选择，逗号分隔；支持 ID 或完整包名')
+    group.add_argument('--without', action='append', default=[], help='本次从默认组合排除，可重复或逗号分隔')
+    group.add_argument('--all', action='store_true', help='选择清单内全部插件')
+    group.add_argument('--none', '--no-plugins', dest='none', action='store_true', help='关闭清单内全部插件，保留基础及清单外 bundle')
+    p.add_argument('--enable', action='append', default=[], help='兼容参数：在所选组合增加插件')
+    p.add_argument('--disable', action='append', default=[], help='兼容参数：从所选组合排除插件')
+    p.add_argument('--save-default', action='store_true', help='操作成功后保存为以后默认组合')
+    p.add_argument('--list', action='store_true', help='兼容参数：只读列出全部插件')
+    p.add_argument('--dry-run', action='store_true', help='只显示计划，不构建、不写配置、不重启')
+    p.add_argument('--skip-tests', action='store_true', help='仅 reload：跳过测试，仍构建')
+    p.add_argument('--no-build', action='store_true', help='仅 reload：跳过构建，仍测试及重新注册')
+    p.add_argument('--no-restart', action='store_true', help='仅 reload：更新注册但不主动重启；live 配置可能热加载')
+    p.add_argument('--show-login', action='store_true', help='启动/重启/完整重载后显示登录链接；查看当前链接请用 login')
     return p
 
 
@@ -81,7 +106,7 @@ def select_plugins(config, args):
     if args.none:
         selected = set()
     selected.update(ids(args.enable))
-    selected.difference_update(ids(args.disable))
+    selected.difference_update(ids(args.disable + args.without))
     return [key for key in plugins if key in selected]
 
 
@@ -96,7 +121,9 @@ def validate(config):
         if not re.fullmatch(r'[A-Za-z0-9_-]+', key):
             raise ReloadError(f'Invalid plugin ID: {key}')
         packages.append(plugin['package'])
-        if not Path(plugin['path']).is_absolute():
+        if plugin.get('source', 'local') not in ('local', 'npm'):
+            raise ReloadError(f'不支持的插件来源: {key}')
+        if plugin.get('source', 'local') == 'local' and not Path(plugin.get('path', '')).is_absolute():
             raise ReloadError(f'Plugin path must be absolute: {key}')
         for phase in ('build', 'test'):
             commands = plugin.get(phase, [])
@@ -201,7 +228,10 @@ def verify_dump(dump, config, selected):
         package = re.escape(config['plugins'][key]['package'])
         if not re.search(r'^\s*name:\s*[\'\"]?' + package + r'[\'\"]?\s*$', dump, re.M):
             raise ReloadError(f'Plugin absent from composed profile: {key}')
+    managed = {v['package'] for v in config['plugins'].values()}
     for package in config.get('requiredPackages', []):
+        if package in managed:
+            continue  # Managed packages are required only when selected above.
         if not re.search(r'^\s*name:\s*[\'\"]?' + re.escape(package) + r'[\'\"]?\s*$', dump, re.M):
             raise ReloadError(f'Required profile plugin is missing: {package}')
     blocks = re.split(r'(?m)^[ \t]*- id:[ \t]*', dump)[1:]
@@ -255,7 +285,83 @@ def launch(config, source, env, pid_file, log_file, show_login):
     raise ReloadError('DSH failed readiness checks; see its private log')
 
 
+def runtime_paths(config):
+    runtime = Path(os.environ.get('XDG_RUNTIME_DIR', f'/tmp/dsh-{os.getuid()}'))
+    return runtime, runtime/f'dsh-{config["profile"]}.pid', runtime/f'dsh-{config["profile"]}.log'
+
+
+def current_login(config, pid_file, log_file):
+    source = Path(config['dshSource'])
+    pid = owned_process(pid_file, source)
+    if pid is None or not port_open(config['server']):
+        raise ReloadError('DSH 未运行或尚未就绪；请先执行 reload-dsh start')
+    # A log from before this process started must never supply a stale token.
+    info = process_info(pid)
+    if info is None:
+        raise ReloadError('服务在读取过程中退出，请重试 status')
+    started = float(Path('/proc/stat').read_text().split('btime ')[1].splitlines()[0]) + int(info['start']) / os.sysconf('SC_CLK_TCK')
+    if not log_file.exists() or log_file.stat().st_mtime < started:
+        raise ReloadError('日志不属于当前进程，无法确定登录链接')
+    prefix = f'http://{config["server"]["host"]}:{config["server"]["port"]}/?token='
+    urls = re.findall(r'^dsh web: (http://[^\s]+)', log_file.read_text(errors='replace'), re.M)
+    if not urls or not urls[-1].startswith(prefix):
+        raise ReloadError('当前日志中未找到匹配的登录链接')
+    if owned_process(pid_file, source) != pid:
+        raise ReloadError('服务在读取过程中发生变化，请重试 login')
+    url = urls[-1]
+    print(f'本机登录：{url}')
+    if config['server'].get('trustedHost'):
+        print(f'域名登录：https://{config["server"]["trustedHost"]}/?token={url[len(prefix):]}')
+
+
+def read_only(config, command):
+    _, pid_file, log_file = runtime_paths(config)
+    if command == 'login':
+        current_login(config, pid_file, log_file)
+        return
+    if command == 'logs':
+        if not log_file.exists():
+            raise ReloadError('尚无启动日志')
+        print('最近 80 行日志（可能包含历史运行记录，token 已隐藏）：')
+        print(redact('\n'.join(log_file.read_text(errors='replace').splitlines()[-80:])))
+        return
+    if command == 'status':
+        pid = owned_process(pid_file, Path(config['dshSource']))
+        print(f'进程：{pid if pid else "未运行（无可验证的受管进程）"}')
+        print(f'端口：{"已监听" if port_open(config["server"]) else "未监听"}')
+        print(f'地址：http://{config["server"]["host"]}:{config["server"]["port"]}')
+        if config['server'].get('trustedHost'):
+            print(f'域名：https://{config["server"]["trustedHost"]}')
+        return
+    home = Path(os.environ.get('DSH_HOME', config.get('dshHome', str(Path.home()/'.dsh'))))
+    manifest = read_json(home/'profiles'/config['profile']/'package.json')
+    bundles = manifest.get('dsh', {}).get('profile', {}).get('bundles', [])
+    known = {v['package']: (k, v) for k, v in config['plugins'].items()}
+    for name in dict.fromkeys([*bundles, *manifest.get('dependencies', {}), *known]):
+        item = known.get(name)
+        default = item is not None and item[0] in config.get('enabled', [])
+        source = item[1].get('source', 'local') if item else '清单外/基础'
+        print(f'{name}  来源={source}  默认={"启用" if default else "—"}  profile={"启用" if name in bundles else "未启用"}')
+    print('profile 表示配置状态；进程状态请用 status。')
+
+
+def validate_args(args):
+    command = 'plugins' if args.list else args.command or 'reload'
+    selection = args.plugins is not None or args.without or args.all or args.none or args.enable or args.disable
+    if command in ('status', 'login', 'logs', 'plugins') and (selection or args.save_default or args.no_build or args.skip_tests or args.no_restart or args.show_login or args.dry_run):
+        raise ReloadError('只读命令不能与选择、构建、重启或保存参数混用')
+    if command != 'reload' and (args.no_build or args.skip_tests or args.no_restart):
+        raise ReloadError('--no-build / --skip-tests / --no-restart 仅用于 reload')
+    return command
+
+
 def execute(config, selected, args, config_path):
+    command = validate_args(args)
+    if command in ('status', 'login', 'logs', 'plugins'):
+        read_only(config, command)
+        return
+    development = command == 'reload'
+    save_default = args.save_default or args.command is None
     source = Path(config['dshSource'])
     dsh_home = Path(os.environ.get('DSH_HOME', config.get('dshHome', str(Path.home()/'.dsh'))))
     profile_dir = dsh_home/'profiles'/config['profile']
@@ -263,28 +369,24 @@ def execute(config, selected, args, config_path):
         raise ReloadError('DSH source/profile is missing; initialize the profile first')
     manifest = read_json(profile_dir/'package.json')
     print(f'Profile: {config["profile"]} | DSH: {source}')
-    if args.list:
-        active = manifest.get('dsh', {}).get('profile', {}).get('bundles', [])
-        for key, p in config['plugins'].items():
-            print(f'{key:16} selected={str(key in selected):5} registered={str(p["package"] in active):5} {p["path"]}')
-        print(f'Config: {config_path}')
-        return
     print('Selected: ' + (', '.join(selected) or '(none; unmanaged plugins stay enabled)'))
     for key in selected:
         plugin = config['plugins'][key]
+        if not development or plugin.get('source', 'local') == 'npm':
+            continue
         directory = Path(plugin['path'])
         if read_json(directory/'package.json')['name'] != plugin['package']:
             raise ReloadError(f'Package name mismatch: {key}')
         for phase in ('build', 'test'):
             if (phase == 'build' and args.no_build) or (phase == 'test' and args.skip_tests):
                 continue
-            for command in plugin.get(phase, []):
-                argv = [arg.replace('{dshSource}', str(source)).replace('{pluginDir}', str(directory)) for arg in command]
+            for command_args in plugin.get(phase, []):
+                argv = [arg.replace('{dshSource}', str(source)).replace('{pluginDir}', str(directory)) for arg in command_args]
                 if args.dry_run:
                     print(f'  {key} {phase}: {shlex.join(argv)}')
     if args.dry_run:
-        print('Would refresh file: snapshots and preserve unmanaged bundles.')
-        print('Would save selection: ' + ', '.join(selected))
+        print('计划：' + ('构建/测试/刷新本地插件安装；' if development else '使用已有安装，不构建、不测试、不安装；') + command)
+        print('默认组合：' + ('成功后保存' if save_default else '保持不变（本次临时选择）'))
         print('Would ' + ('skip restart.' if args.no_restart else f'restart owned DSH on {config["server"]["port"]} after verification.'))
         return
     runtime = Path(os.environ.get('XDG_RUNTIME_DIR', f'/tmp/dsh-{os.getuid()}'))
@@ -301,23 +403,40 @@ def execute(config, selected, args, config_path):
         current = owned_process(pid_file, source)
         if not args.no_restart and port_open(config['server']) and current is None:
             raise ReloadError('Port is occupied by an unowned process; refusing to restart')
+        if command == 'start' and current is not None:
+            read_only(config, 'status')
+            print('DSH 已运行，未修改配置；如需切换组合或保存默认，请使用 restart。')
+            if args.show_login:
+                current_login(config, pid_file, log_file)
+            return
         env = dict(os.environ, DSH_SOURCE=str(source), DSH_HOME=str(dsh_home))
         for key in selected:
             plugin = config['plugins'][key]
-            print(f'==> Build/check {key}', flush=True)
+            if not development or plugin.get('source', 'local') == 'npm':
+                continue
+            print(f'==> 构建/检查 {key}', flush=True)
             for phase in ('build', 'test'):
                 if (phase == 'build' and args.no_build) or (phase == 'test' and args.skip_tests):
                     continue
-                for command in plugin.get(phase, []):
-                    run([arg.replace('{dshSource}', str(source)).replace('{pluginDir}', plugin['path']) for arg in command], plugin['path'], env)
+                for command_args in plugin.get(phase, []):
+                    run([arg.replace('{dshSource}', str(source)).replace('{pluginDir}', plugin['path']) for arg in command_args], plugin['path'], env)
         backup = Path(tempfile.mkdtemp(prefix=f'dsh-{config["profile"]}-backup-', dir=runtime))
         shutil.copytree(profile_dir, backup/'profile', symlinks=True)
         shutil.copy2(config_path, backup/'reload.json')
         print(f'==> Profile backup: {backup}', flush=True)
         stopped = False
         try:
+            # Stop before profile edits: live patch reload otherwise changes the old process.
+            if not args.no_restart:
+                stop(pid_file, source)
+                stopped = True
             for key in selected:
                 plugin = config['plugins'][key]
+                if not development or plugin.get('source', 'local') == 'npm':
+                    installed = profile_dir/'node_modules'/plugin['package']/'package.json'
+                    if not installed.exists():
+                        raise ReloadError(f'插件尚未安装：{key}；请先通过 DSH plugin add 安装')
+                    continue
                 dependencies = read_json(profile_dir/'package.json').get('dependencies', {})
                 if plugin['package'] in dependencies:
                     run(['pnpm', 'dsh', 'plugin', '--profile', config['profile'], 'remove', plugin['package']], source, env)
@@ -327,11 +446,10 @@ def execute(config, selected, args, config_path):
             verify_dump(dump, config, selected)
             print('==> Selected bundles and required profile plugins verified', flush=True)
             if not args.no_restart:
-                stop(pid_file, source)
-                stopped = True
                 launch(config, source, env, pid_file, log_file, args.show_login)
-            config['enabled'] = selected
-            write_json(config_path, config)
+            if save_default:
+                config['enabled'] = selected
+                write_json(config_path, config)
         except BaseException as failure:
             print(f"Reload failed: {redact(str(failure))}", file=sys.stderr)
             # Keep the failing state for diagnosis and restore exact previous snapshots.
@@ -347,7 +465,7 @@ def execute(config, selected, args, config_path):
                 except Exception as e:
                     print(f'Previous DSH restart failed: {e}', file=sys.stderr)
             raise
-        print('==> Saved selection: ' + (', '.join(selected) or '(none)'))
+        print(('==> 已保存默认组合：' if save_default else '==> 本次组合（默认未更改）：') + (', '.join(selected) or '无清单内插件'))
 
 
 def main():

@@ -6,28 +6,69 @@
     "port": 3080,
     "trustedHost": "dsh.example.com"
   },
-  "enabled": ["cangzhi", "ai-meter"],
+  "enabled": [
+    "cangzhi",
+    "ai-meter",
+    "better-sidebar"
+  ],
   "requiredPackages": [
     "@deepseek-ai/dsh-host-directory-picker-browse",
     "@deepseek-ai/dsh-client-ui-directory-picker-browse"
   ],
-  "requiredDisabledRows": ["directory-picker"],
+  "requiredDisabledRows": [
+    "directory-picker"
+  ],
   "plugins": {
     "cangzhi": {
       "package": "dsh-cangzhi",
       "path": "/path/to/dsh-cangzhi",
       "build": [
-        ["{dshSource}/node_modules/.bin/tsdown", "--config", "tsdown.config.ts"],
-        ["node", "scripts/rewrite-client-id.mjs"],
-        ["pnpm", "check"]
+        [
+          "{dshSource}/node_modules/.bin/tsdown",
+          "--config",
+          "tsdown.config.ts"
+        ],
+        [
+          "node",
+          "scripts/rewrite-client-id.mjs"
+        ],
+        [
+          "pnpm",
+          "check"
+        ]
       ],
-      "test": [["pnpm", "test"]]
+      "test": [
+        [
+          "pnpm",
+          "test"
+        ]
+      ]
     },
     "ai-meter": {
       "package": "dsh-ai-meter",
       "path": "/path/to/dsh-ai-meter",
-      "build": [["npm", "run", "build"], ["npm", "run", "typecheck"]],
-      "test": [["npm", "test"]]
+      "build": [
+        [
+          "npm",
+          "run",
+          "build"
+        ],
+        [
+          "npm",
+          "run",
+          "typecheck"
+        ]
+      ],
+      "test": [
+        [
+          "npm",
+          "test"
+        ]
+      ]
+    },
+    "better-sidebar": {
+      "package": "dsh-better-sidebar",
+      "source": "npm"
     }
   }
 }

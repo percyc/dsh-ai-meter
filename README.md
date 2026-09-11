@@ -36,6 +36,8 @@ Unified AI provider usage, quota and balance monitor for DeepSeek Harness.
 
 需要 Node.js 22+、npm，以及已安装的 DSH / pnpm。
 
+客户端显式依赖 `dsh-client-ui-renderer`，不依赖已移除的 `dsh-client-runtime`；用于 DSH 0.1.5 的插件加载。
+
 ```sh
 npm ci
 npm run check
@@ -59,6 +61,8 @@ dsh plugin --profile web add /absolute/path/dsh-ai-meter
 ## 可选：多个本地插件一起重载
 
 仓库提供 [reload-dsh.py](scripts/reload-dsh.py) 和 [配置模板](scripts/reload-dsh.example.json)，需按实际 DSH 路径与插件清单安装配置，并非安装插件后自动可用。配置完成后，用 `reload-dsh --list` 查看，`reload-dsh --plugins ai-meter` 重载，`--enable/--disable` 增量选择，`--dry-run` 预览。多个插件可用逗号分隔；脚本记住上次成功选择，没有必须一起加载的其他插件。详见 [注册与多插件重载](docs/RELOAD_DSH.md)。
+
+日常启动用 `reload-dsh start`，只重启用 `reload-dsh restart`，查看当前登录链接用 `reload-dsh login`；这些操作不构建插件。`reload-dsh --help` 提供中文说明，默认可配置藏知、AI Meter 与 better-sidebar 三个插件。
 
 ## 配置
 

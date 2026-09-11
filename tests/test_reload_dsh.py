@@ -13,6 +13,8 @@ spec.loader.exec_module(r)
 class ReloadTests(unittest.TestCase):
     def setUp(self):
         self.config = json.loads((Path(__file__).parents[1]/'scripts/reload-dsh.example.json').read_text())
+        self.config['plugins'].pop('better-sidebar', None)
+        self.config['enabled'] = ['cangzhi', 'ai-meter']
 
     def select(self, *args):
         return r.select_plugins(self.config, r.parser().parse_args(args))
@@ -111,6 +113,108 @@ class ReloadTests(unittest.TestCase):
                 move.assert_called_once()
             self.assertEqual(r.read_json(profile/'package.json'), original)
             self.assertEqual(r.read_json(config_path)['enabled'], ['cangzhi','ai-meter'])
+
+
+class CommandTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.config = json.loads((Path(__file__).parents[1]/'scripts/reload-dsh.example.json').read_text())
+        self.config['plugins']['better-sidebar'] = {'package':'dsh-better-sidebar', 'source':'npm'}
+        self.config['enabled'] = list(self.config['plugins'])
+        self.config.update(dshSource=str(self.root/'source'), dshHome=str(self.root/'home'))
+        self.config['requiredPackages'] = []
+        self.config['requiredDisabledRows'] = []
+        (self.root/'source').mkdir(); (self.root/'source/package.json').write_text('{}')
+        self.profile = self.root/'home/profiles/web'; self.profile.mkdir(parents=True)
+        self.manifest = {'dsh':{'profile':{'bundles':['base', *[v['package'] for v in self.config['plugins'].values()]]}}}
+        r.write_json(self.profile/'package.json', self.manifest)
+        for v in self.config['plugins'].values():
+            d=self.profile/'node_modules'/v['package'];d.mkdir(parents=True);r.write_json(d/'package.json', {'name':v['package']})
+        self.path=self.root/'config.json';r.write_json(self.path,self.config)
+        env=patch.dict(r.os.environ, {'DSH_HOME':str(self.root/'home'), 'XDG_RUNTIME_DIR':str(self.root/'runtime')});env.start();self.addCleanup(env.stop)
+
+    def execute(self, *argv):
+        args=r.parser().parse_args(argv)
+        return r.execute(self.config, r.select_plugins(self.config,args), args,self.path)
+
+    def test_precise_selection_exclusion_and_conflict(self):
+        args=r.parser().parse_args(['start','--without','ai-meter'])
+        self.assertEqual(r.select_plugins(self.config,args),['cangzhi','better-sidebar'])
+        with self.assertRaises(SystemExit):r.parser().parse_args(['start','--plugins','cangzhi','--without','ai-meter'])
+        with self.assertRaises(r.ReloadError):r.validate_args(r.parser().parse_args(['login','--save-default']))
+
+    def test_local_reload_dry_run_with_build_commands_has_no_side_effects(self):
+        import contextlib, io
+        directory = self.root/'meter'; directory.mkdir()
+        r.write_json(directory/'package.json', {'name':'dsh-ai-meter'})
+        self.config['plugins']['ai-meter']['path'] = str(directory)
+        before = self.path.read_bytes(), (self.profile/'package.json').read_bytes()
+        output = io.StringIO()
+        with patch.object(r,'run') as run, patch.object(r,'write_json') as write, patch.object(r,'stop') as stop, contextlib.redirect_stdout(output):
+            self.execute('reload','--plugins','ai-meter','--dry-run')
+            run.assert_not_called(); write.assert_not_called(); stop.assert_not_called()
+        self.assertIn('npm run build', output.getvalue())
+        self.assertIn('；reload', output.getvalue())
+        self.assertEqual(before, (self.path.read_bytes(), (self.profile/'package.json').read_bytes()))
+
+    def test_start_running_never_mutates_or_builds(self):
+        before=self.path.read_bytes()
+        with patch.object(r,'owned_process',return_value=42),patch.object(r,'port_open',return_value=True),patch.object(r,'run') as run,patch.object(r,'write_json') as write,patch.object(r,'stop') as stop:
+            self.execute('start','--plugins','better-sidebar')
+            run.assert_not_called();write.assert_not_called();stop.assert_not_called()
+        self.assertEqual(self.path.read_bytes(),before)
+
+    def test_restart_only_composes_and_launches_without_install(self):
+        with patch.object(r,'owned_process',return_value=42),patch.object(r,'port_open',return_value=True),patch.object(r,'stop'),patch.object(r,'launch'),patch.object(r,'verify_dump'),patch.object(r,'run',return_value='') as run:
+            self.execute('restart','--plugins','better-sidebar')
+            self.assertEqual(run.call_count,1)
+            self.assertIn('--dump-config',run.call_args.args[0])
+        self.assertEqual(r.read_json(self.path)['enabled'],['cangzhi','ai-meter','better-sidebar'])
+        self.assertEqual(r.read_json(self.profile/'package.json')['dsh']['profile']['bundles'],['base','dsh-better-sidebar'])
+
+    def test_success_can_save_new_default(self):
+        with patch.object(r,'owned_process',return_value=None),patch.object(r,'port_open',return_value=False),patch.object(r,'stop'),patch.object(r,'launch'),patch.object(r,'verify_dump'),patch.object(r,'run',return_value=''):
+            self.execute('start','--no-plugins','--save-default')
+        self.assertEqual(r.read_json(self.path)['enabled'],[])
+
+    def test_restart_failure_restores_profile_and_default(self):
+        with patch.object(r,'owned_process',return_value=42),patch.object(r,'port_open',return_value=True),patch.object(r,'stop'),patch.object(r,'launch',side_effect=[r.ReloadError('launch failed'),None]) as launch,patch.object(r,'verify_dump'),patch.object(r,'run',return_value=''):
+            with self.assertRaisesRegex(r.ReloadError,'launch failed'):
+                self.execute('restart','--no-plugins','--save-default')
+            self.assertEqual(launch.call_count,2)
+        self.assertEqual(r.read_json(self.profile/'package.json'),self.manifest)
+        self.assertEqual(r.read_json(self.path)['enabled'],['cangzhi','ai-meter','better-sidebar'])
+
+    def test_npm_reload_never_builds_or_reinstalls(self):
+        with patch.object(r,'owned_process',return_value=None),patch.object(r,'port_open',return_value=False),patch.object(r,'stop'),patch.object(r,'launch'),patch.object(r,'verify_dump'),patch.object(r,'run',return_value='') as run:
+            self.execute('reload','--plugins','better-sidebar')
+            self.assertEqual(run.call_count,1)
+            self.assertIn('--dump-config',run.call_args.args[0])
+
+    def test_login_stopped_does_not_spawn_or_write(self):
+        with patch.object(r,'owned_process',return_value=None),patch.object(r,'run') as run,patch.object(r,'write_json') as write,patch.object(r.subprocess,'Popen') as spawn:
+            with self.assertRaises(r.ReloadError):self.execute('login')
+            run.assert_not_called();write.assert_not_called();spawn.assert_not_called()
+
+    def test_login_checks_log_age_and_redacts_logs(self):
+        import contextlib,io,os
+        runtime,pid,log=r.runtime_paths(self.config);runtime.mkdir();log.write_text('dsh web: http://127.0.0.1:3080/?token=test-secret\n')
+        with patch.object(r,'owned_process',return_value=os.getpid()),patch.object(r,'process_info',return_value={'start':'0'}),patch.object(r,'port_open',return_value=True):
+            output=io.StringIO()
+            with contextlib.redirect_stdout(output):self.execute('login')
+            self.assertIn('https://dsh.example.com/?token=test-secret',output.getvalue())
+            os.utime(log,(1,1))
+            with self.assertRaisesRegex(r.ReloadError,'日志不属于'):self.execute('login')
+        output=io.StringIO()
+        with contextlib.redirect_stdout(output):self.execute('logs')
+        self.assertNotIn('test-secret',output.getvalue());self.assertIn('[REDACTED]',output.getvalue())
+
+    def test_deselected_managed_plugin_is_not_required(self):
+        self.config['requiredPackages']=['dsh-better-sidebar']
+        r.verify_dump('',self.config,[])
+        with self.assertRaises(r.ReloadError):r.verify_dump('',self.config,['better-sidebar'])
 
 
 if __name__ == '__main__':
